@@ -1,0 +1,43 @@
+# Generated build trees
+/bank/build/
+/mover/build/
+
+# Generated compiler and assembler output outside build trees
+*.o
+*.obj
+*.elf
+*.map
+*.disasm.txt
+armips-symbols.txt
+
+# Decrypted/extracted title images and private runtime data
+/bank/*.code
+/mover/*.code
+/bank/bankdata.bin
+/mover/bankdata.bin
+*.3ds
+*.cia
+*.cxi
+*.dmp
+
+# Local analysis indexes and caches
+.codegraph/
+.cache/
+
+# Editor and operating-system files
+.idea/
+.vs/
+.vscode/
+*.suo
+*.user
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
