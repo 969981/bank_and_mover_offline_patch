@@ -349801,9 +349801,9 @@ undefined4 FUN_002acb80(int param_1)
 
 
 
-/* #6703 @ 002acbdc : BankDownloadState_Update */
+/* #6703 @ 002acbdc : InitialRemoteRecordState_Update */
 
-undefined4 BankDownloadState_Update(int param_1)
+undefined4 InitialRemoteRecordState_Update(int param_1)
 
 {
   char cVar1;
@@ -351050,9 +351050,9 @@ undefined4 FUN_002af34c(int param_1)
 
 
 
-/* #6729 @ 002af460 : EntitlementMetadataState_Update */
+/* #6729 @ 002af460 : BankDataSyncState_Update */
 
-undefined4 EntitlementMetadataState_Update(int *param_1)
+undefined4 BankDataSyncState_Update(int *param_1)
 
 {
   char cVar1;
@@ -351641,9 +351641,9 @@ undefined8 FUN_002b0098(undefined4 param_1,undefined4 param_2)
 
 
 
-/* #6735 @ 002b0270 : OptionalRewardState_Update */
+/* #6735 @ 002b0270 : AccountTicketState_Update */
 
-undefined4 OptionalRewardState_Update(int param_1)
+undefined4 AccountTicketState_Update(int param_1)
 
 {
   longlong lVar1;

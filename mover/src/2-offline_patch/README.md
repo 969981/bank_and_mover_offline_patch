@@ -1,53 +1,124 @@
-# Poke Mover Offline Patch Design
+# Step 2: offline patch
 
-## Scope
+## Purpose and prerequisites
 
-The offline patch retains the original cartridge scan, filtering, conversion, and Transfer Box normalization while replacing service-dependent eligibility, download, stage, commit, and rollback states with local equivalents.
+This patch makes Poke Mover use the same local Bank file as Pokemon Bank:
+`sd:/3ds/Bank/bankdata.bin`. It retains the stock source-game selection,
+cartridge reading, Pokemon conversion, confirmation, source-game save, and
+disconnect flow.
 
-## Business-state bypass
+A valid current-format `bankdata.bin` of exactly `0xBB518` bytes must already
+exist. Poke Mover does not create a new Bank file. In the stock distribution and
+usage path, a user reaches Poke Mover through Pokemon Bank only after the Bank
+account and initial Bank data have been created.
 
-| Proposed patch site | Intended transition |
-|---:|---|
-| `0x00242D10` | Skip `CONNECT_ONLINE` after game selection |
-| `0x00242D28` | Continue with transfer eligibility processing |
-| `0x00248CDC` | Skip creation of the remote eligibility object |
-| `0x00248D58` | Enter local completion handling |
-| `0x00245728` | Skip the Gen 5 remote check |
-| `0x002460B8` | Skip the Gen 1/2 remote check |
-| `0x002488A0`, `0x002483CC` | Enter the existing initialization-success branches |
-| `0x0024A150` | Skip remote transaction preparation |
-| `0x0024A3D8` | Enter complete-file local commit handling |
+The local Transfer Box must be empty before starting a new transfer. Existing
+Transfer Box contents are never overwritten.
 
-These are business-state transitions, not a replacement for all HTTPC results.
+## Overall route
 
-## Local load
+```text
+Stock source-game selection
+        │
+        ▼
+"Connecting..." ── network availability forced locally
+        │             no remote connection job
+        ▼
+Refresh runtime offline ticket to console time + 999 days
+        │
+        ▼
+"Connecting to the local offline Bank data..." (at least 2 seconds)
+        │
+        ▼
+Stock cartridge read, filtering, and Pokemon conversion
+        │
+        ├── Gen 5 legality request ──────► skip to local continuation
+        └── Gen 1/2 legality request ────► skip to local continuation
+                                              │
+                                              ▼
+                                complete remote-check state locally
+                                              │
+                                              ▼
+                           load bankdata.bin and merge candidates
+                                ├── invalid/missing ─► error
+                                ├── Transfer Box busy ► reject; preserve file
+                                └── empty box ───────► stock confirmation UI
+```
 
-The replacement takes control of the complete state-1 branch at `0x00248D3C`, reads and validates exactly `0xBB518` bytes from `/3ds/Bank/bankdata.bin`, and writes the final state that the original asynchronous callback would have selected.
+The native candidate-conversion state remains responsible for reading the
+source game, filtering records, and constructing transfer candidates. Only its
+two embedded server legality requests are bypassed. These two call sites were
+verified against the current binary and cross-checked with the public precedent
+cited below.
 
-It reuses the object-loading semantics of `0x0025C978`: preserve the 30 cartridge candidates, load the complete BankObject, and restore those candidates when the file's Transfer Box is empty. A Transfer Box update must keep each `0xE8` record synchronized with its one-byte tag.
+Before loading `bankdata.bin`, the patch preserves the candidates in native
+Transfer Slot objects. It then reads and validates the complete local Bank file.
+If the loaded Transfer Box is empty, the candidates are restored with the
+stock slot-write operations, which update both each `0xE8`-byte record and its
+parallel tag. The patch does not copy raw slot bytes over existing data.
 
-## Transactional local save
+Existing account identity fields remain unchanged. The offline ticket expiry is
+computed in runtime state from the 3DS system clock plus 999 days.
 
-| Proposed hook boundary | Replacement behavior |
-|---:|---|
-| `0x0024A240` | Write the complete serialized object to `bankdata.tmp` and verify the exact byte count |
-| `0x0024A3E4` | After the game save succeeds, rotate the previous file to a recoverable backup and replace `bankdata.bin` |
-| `0x0024A420` | After the game save fails, discard the temporary file and retain the previous `bankdata.bin` |
+## Transfer save transaction
 
-The replacement branches reproduce the original asynchronous completion fields. Mover and Bank continue to share `/3ds/Bank/bankdata.bin`; no Mover-specific persistent format is introduced.
+```text
+User confirms the transfer
+        │
+        ▼
+Stock full Bank serialization (0xBB518 bytes)
+        │
+        ▼
+Write bankdata.tmp + set size + flush + verify bytes written
+        ├── failure ─────────────► abort; preserve bankdata.bin
+        └── success
+              │
+              ▼
+Stock source-cartridge save
+        ├── failed ─► delete bankdata.tmp ─► keep bin and bak
+        └── succeeded
+              │
+              ▼
+Delete old bak ─► rename bin to bak ─► rename tmp to bin
+                                      ├── success ─► stock disconnect route
+                                      └── failure ─► restore bak when possible
+```
 
-The implementation must create `/3ds/Bank` when absent, close every FS handle, reject short reads and writes, and emit all overlapping state changes in one IPS.
+Staging, commit, and rollback replace the corresponding remote transactions.
+Commit occurs only after the original source-game save succeeds. Delete, rename,
+close, size, write-length, restoration, and rollback results are checked.
 
-## References
+If there are no transferable Pokemon, or if the user cancels, the stock
+no-transfer route is retained while its final server transaction is completed
+locally. It then enters the stock disconnect route.
 
-The high-level state-machine and offline-bypass approach was cross-checked against these public projects:
+## Display and timing behavior
 
-- [Transporter-PKSM-Bank-Patch](https://github.com/zaksabeast/Transporter-PKSM-Bank-Patch) and its [Transporter documentation](https://github.com/zaksabeast/Transporter-PKSM-Bank-Patch/blob/master/TRANSPORTER_DOCS.md), by zaksabeast: state-machine structure and patch-oriented control-flow concepts.
-- [Transporter-Offline-Patch](https://github.com/zaksabeast/Transporter-Offline-Patch), by zaksabeast: the public offline-bypass design and its compatibility context.
+LayeredFS resources cover all ten supported languages:
 
-These references apply to the overall approach only. The addresses and version-specific behavior in this document were derived from and cross-checked against the current `00040000000C9C00.code`; they must not be assumed to apply to other versions. No source code from the referenced projects is included in this patch directory.
+- The initial Internet message becomes a generic **Connecting...** prompt.
+- The local Bank-data message is shown for at least 2 seconds before native
+  cartridge reading and conversion begin.
+- The save message identifies the local offline Bank data instead of a server.
+- The disconnect text is generic. Its existing 1.5-second local first phase is
+  unchanged and no remote disconnect job is allocated.
 
-## Known limitations
+Test in an emulator and back up `bankdata.bin` before using the patch on
+hardware.
 
-- The minimal local retry state that must be cleared is not yet proven.
-- Fully offline timestamp behavior remains tied to the unidentified per-slot timestamp producer.
+## External open-source references
+
+- [zaksabeast/Transporter-Offline-Patch](https://github.com/zaksabeast/Transporter-Offline-Patch)
+  provided the public precedent for replacing Poke Mover's network-facing
+  states, including the two legality-request bypass points in the native
+  candidate-conversion state.
+- [Transporter-PKSM-Bank-Patch state-machine notes](https://github.com/zaksabeast/Transporter-PKSM-Bank-Patch/blob/master/TRANSPORTER_DOCS.md)
+  were used to cross-check the high-level state order.
+- [devkitPro/libctru FS interface declarations](https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/fs.h)
+  and [FS service implementation](https://github.com/devkitPro/libctru/blob/master/libctru/source/services/fs.c)
+  were used to verify the public FSUSER/FSFILE interfaces and result handling
+  used by the local-file layer.
+
+The current Poke Mover binary is the authority for all addresses, transitions,
+object layouts, file offsets, and patch sites. They were independently verified
+for this version rather than copied from the external projects.

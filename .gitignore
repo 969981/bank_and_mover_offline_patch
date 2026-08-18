@@ -25,6 +25,8 @@ armips-symbols.txt
 # Local analysis indexes and caches
 .codegraph/
 .cache/
+__pycache__/
+*.pyc
 
 # Editor and operating-system files
 .idea/

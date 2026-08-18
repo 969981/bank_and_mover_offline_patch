@@ -1,35 +1,146 @@
-# Pokemon Bank Offline Patch Design
+# Step 2: offline patch
 
-## Scope
+## Purpose and files
 
-The offline patch loads and saves `/3ds/Bank/bankdata.bin` without starting the Bank service transaction. It bypasses only the business states that require the retired service; it does not report a false global network state to unrelated system components.
+This patch redirects Pokemon Bank's remote Bank-data operations to one local
+file while retaining the stock game-selection, Bank Box, and game-save logic.
 
-## Local load
+| File | Purpose |
+|---|---|
+| `sd:/3ds/Bank/bankdata.bin` | Current complete Bank file (`0xBB518` bytes) |
+| `sd:/3ds/Bank/bankdata.tmp` | Fully written candidate used during saving |
+| `sd:/3ds/Bank/bankdata.bak` | Previous complete file retained during commit |
 
-The complete download state is replaced at its state-1 request boundary. The replacement:
+The patch creates `sd:/3ds` and `sd:/3ds/Bank` when a local file must be
+created. An existing invalid or short `bankdata.bin` is rejected and is never
+silently replaced.
 
-1. Opens `/3ds/Bank/bankdata.bin` and reads exactly `0xBB518` bytes.
-2. Rejects a short read, a format version other than `2`, or a box count other than `100`.
-3. Passes the buffer through the original current-format BankObject loader.
-4. Reproduces the original callback result and asynchronous completion flags.
-5. Enters the existing final-success branch without issuing the later remote transaction query.
+## Overall route
 
-The 32-byte remote transaction descriptor is not part of bankdata and remains unused in an offline session.
+```text
+Title / account checks
+        │
+        ▼
+"Connecting..." ── network availability forced locally
+        │             no remote connection job
+        ▼
+Inspect bankdata.bin header and exact length
+        ├── invalid/read error ──► error; preserve file; stop
+        └── usable result
+              ├── valid ────────► existing-record mode 4
+              └── missing ──────► first-use mode 5
+                                      │
+                                      ▼
+Refresh runtime offline ticket to console time + 999 days
+                │
+                ▼
+Stock first-use decision
+        ├── mode 4 ──────────────► feature menu
+        └── mode 5 ─► stock Bank initialization ─► local atomic commit
+                                                    │
+                                                    ▼
+                                               feature menu
+```
 
-## Transactional local save
+The startup record check reads only the four-byte format header at file offset
+`0x15C`; it does not load the complete Bank body. The stock state 9 decision is
+preserved. A missing file therefore uses the application's own first-use setup
+to obtain console/account values, initialize 100 localized Bank Boxes, and set
+the real creation date. Only the final remote creation is replaced with a local
+write.
 
-| Proposed hook boundary | Replacement behavior |
-|---:|---|
-| `0x002B24A0` | Write the complete serialized object to `bankdata.tmp`; verify the file length and actual byte count |
-| `0x002B20AC` | After the game save succeeds, rotate the previous file to a recoverable backup and replace `bankdata.bin` with the temporary file |
-| `0x002B20E8` | After the game save fails, discard the temporary file and retain the previous `bankdata.bin` |
+The ticket expiry exists in runtime state. Existing identity fields and the
+creation date stored in `bankdata.bin` are not rewritten by the ticket patch.
 
-Each replacement must publish the result through the same completion fields consumed by the original outer state machine. The game save and other local title-save operations remain in their original order.
+## Loading and using the Bank
 
-The implementation must create `/3ds/Bank` when absent, treat short writes as failure, close handles on every branch, and never overwrite the last valid file before the game save succeeds.
+```text
+Feature menu: Use Pokemon Bank
+        │
+        ▼
+Stock game selection and game-software checks
+        │
+        ▼
+"Connecting to the local offline Bank data..." (at least 2 seconds)
+        │
+        ▼
+Read exactly 0xBB518 bytes from bankdata.bin
+        ├── read/header failure ─► error
+        └── valid ───────────────► rebuild flow metadata
+                                      │
+                                      ▼
+                         resume stock local substates 6-10
+                                      │
+                                      ▼
+                         skip reward-server states
+                                      │
+                                      ▼
+                              stock Bank Box UI
+```
 
-## Known limitations
+The complete local file is loaded only after a game has been selected. The
+patch skips the remote request portion of the shared Bank-data synchronization
+state, then resumes its native metadata-copy and selected-game callbacks. Box
+viewing, Pokemon movement, validation, and game interaction remain stock code.
 
-- Fully offline edits may retain an old or zero per-slot 64-bit update time until the timestamp producer is identified.
-- Local retry-state cleanup has not yet been reduced to a proven minimal set.
-- Load bypass, local save, and their shared state edits must be built as one IPS so overlapping instruction sites cannot overwrite each other.
+The former Pokemon HOME menu entry is named **Choose Language** and is routed to
+the stock language-selection flow. It does not enter the HOME Bank-data path.
+After a language change, the return-to-title variant selects an appended blank
+message so the newly selected font does not draw the previous language's text.
+
+## Saving, commit, and rollback
+
+```text
+Stock full Bank serialization (0xBB518 bytes)
+        │
+        ▼
+Write bankdata.tmp + set size + flush + verify bytes written
+        ├── failure ─────────────► save failure; keep bankdata.bin
+        └── success
+              │
+              ▼
+Save-progress screen remains visible for at least 2 seconds
+              │
+              ▼
+Stock cartridge / digital-game save
+        ├── failed ─► delete bankdata.tmp ─► keep bin and bak
+        └── succeeded
+              │
+              ▼
+Delete old bak ─► rename bin to bak ─► rename tmp to bin
+                                      ├── success ─► disconnect
+                                      └── failure ─► restore bak when possible
+```
+
+The local staging operation is synchronous, but its completion enters a
+nonblocking two-second state-machine delay. Rendering continues and the file is
+not written repeatedly. Commit occurs only after the stock game-save result is
+successful. Delete, rename, close, size, write-length, restoration, and rollback
+results are checked.
+
+Ending Bank use without saving does not install a new `bankdata.bin`.
+
+## Display and disconnect behavior
+
+LayeredFS resources cover all ten supported languages:
+
+- The initial Internet message becomes a generic **Connecting...** prompt.
+- The post-selection service message identifies the local offline Bank data.
+- The save message identifies the local offline file instead of a server.
+- Normal state 20 exits display **Disconnecting...** and complete their local
+  first phase after 1.5 seconds without allocating a remote disconnect job.
+- The language-change state 21 uses the blank message described above.
+
+Test with a backup in an emulator before using the patch on hardware.
+
+## External open-source references
+
+- [devkitPro/libctru FS interface declarations](https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/fs.h)
+  and [FS service implementation](https://github.com/devkitPro/libctru/blob/master/libctru/source/services/fs.c)
+  were used to verify the public 3DS FSUSER/FSFILE command interfaces and result
+  handling used by the local-file layer.
+
+The current Bank binary is the authority for all application addresses, state
+transitions, object layouts, file offsets, and patch sites. Those conclusions
+were independently derived and verified for this version; they were not taken
+from the external FS references.

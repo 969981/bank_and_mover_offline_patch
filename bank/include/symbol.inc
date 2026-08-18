@@ -32,6 +32,7 @@
 .definelabel BankFile_IsCurrentVersion,         0x002CB84C
 .definelabel BankFile_GetSerializedSize,        0x002CB864
 .definelabel BankFile_SerializeBody,            0x002CB870
+.definelabel BankFile_DeriveFlowMetadata,       0x001D5EC0
 
 ; -----------------------------------------------------------------------------
 ; Main business states
@@ -45,11 +46,11 @@
 .definelabel BankBoxUi_Update,                  0x002A7094
 .definelabel DisconnectCleanupState_Update,      0x002ABC24
 .definelabel ReturnToTitleState_Update,         0x002ABC24
+.definelabel DisconnectCleanupState_Initialize, 0x002ABD38
+.definelabel DisconnectCleanup_SkipRemoteJob,   0x002ABD94
 .definelabel InitialRemoteRecordState_Update,   0x002ACBDC
 .definelabel RewardEligibilityState_Update,     0x002AD1BC
-; Compatibility alias.
-; 兼容别名。
-.definelabel PostSelectionDispatchState_Update, 0x002AD1BC
+.definelabel PostSelectionConnectionState_Update,0x002A93F4
 .definelabel RewardReceiveState_Update,         0x002A9750
 .definelabel BankCreateState_Update,            0x002AE568
 .definelabel BankCreate_InitializeEmptyObject,   0x002AE8B0
@@ -57,13 +58,16 @@
 .definelabel BankNoSaveRollbackState_Update,     0x002AEB9C
 .definelabel NetworkConnectionState_Initialize, 0x002AF34C
 .definelabel NetworkConnectionState_Update,     0x002AF1FC
-.definelabel BankDataSyncState_Update,           0x002AF460
-.definelabel BankDataSyncState_Initialize,       0x002AFE38
+.definelabel NetworkConnection_AvailabilityCall,0x002AF37C
+.definelabel NetworkConnection_SkipRemoteJob,    0x002AF38C
+.definelabel NetworkConnection_StateTimerInitCall,0x002AF3D0
+.definelabel BankFlow_PostSelectionMetadataPath, 0x002A58B4
+.definelabel StateTimer_Reset,                  0x00229DB4
+.definelabel StateTimer_HasElapsed,             0x001D5BB0
+.definelabel BankDataSyncState_Update,          0x002AF460
+.definelabel BankDataSyncState_Initialize,      0x002AFE38
 .definelabel HomeRollbackState_Update,           0x002AFE94
-.definelabel EntitlementState_Update,            0x002B0270
-; Compatibility alias.
-; 兼容别名。
-.definelabel OptionalRewardState_Update,         0x002B0270
+.definelabel AccountTicketState_Update,          0x002B0270
 .definelabel BankSaveState_Update,              0x002B1CF8
 .definelabel BankSave_SerializeAndStage,        0x002B2320
 
