@@ -13,6 +13,8 @@
 
 // r8 already contains the successful download's complete bankdata pointer.
 // Replace the original mov r5,#0 and reproduce it in the trampoline.
+// r8 已保存下载成功后的完整 bankdata 指针。
+// 覆盖原来的 mov r5,#0，并在跳板中重放该指令。
 .org DownloadPatch_HookAddress
     bl DownloadPatch_Trampoline
 

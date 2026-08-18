@@ -14,7 +14,12 @@ BUILD := $(TARGET_ROOT)/build/1-download_patch
 TITLE_ID := 00040000000C9B00
 BASE := $(TARGET_ROOT)/00040000000C9B00.code
 PATCHED := $(BUILD)/00040000000C9B00.code
-RELEASE_IPS := $(TARGET_ROOT)/release/1-download_patch/luma/titles/$(TITLE_ID)/code.ips
+RELEASE_TITLE := $(TARGET_ROOT)/release/1-download_patch/luma/titles/$(TITLE_ID)
+RELEASE_IPS := $(RELEASE_TITLE)/code.ips
+RELEASE_ROMFS := $(RELEASE_TITLE)/romfs
+ROMFS_SOURCE ?= $(TARGET_ROOT)/romfs
+MESSAGE_PATCHER := patch_messages.py
+PYTHON ?= python3
 OBJECT := $(BUILD)/download_patch.o
 DISASSEMBLY := $(BUILD)/download_patch.disasm.txt
 SYMBOLS := $(BUILD)/armips-symbols.txt
@@ -27,7 +32,7 @@ CFLAGS := -std=c11 -Os -march=armv6k -mtune=mpcore -marm -mfloat-abi=soft \
 	-fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common \
 	-ffunction-sections -fdata-sections -Wall -Wextra -Werror
 
-all: $(RELEASE_IPS)
+all: $(RELEASE_IPS) layeredfs
 
 $(BUILD):
 	mkdir -p "$@"
@@ -44,8 +49,13 @@ $(RELEASE_IPS): $(PATCHED)
 	rm -f "$@"
 	"$(IPS_TOOL)" --create --ips "$(BASE)" "$(PATCHED)" "$@"
 
+.PHONY: layeredfs
+layeredfs: $(MESSAGE_PATCHER)
+	rm -rf "$(RELEASE_ROMFS)"
+	"$(PYTHON)" "$(MESSAGE_PATCHER)" --source-romfs "$(ROMFS_SOURCE)" --output-romfs "$(RELEASE_ROMFS)"
+
 clean:
-	rm -f "$(RELEASE_IPS)"
+	rm -rf "$(RELEASE_TITLE)"
 	rm -rf "$(BUILD)"
 
 FORCE:

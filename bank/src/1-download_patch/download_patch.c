@@ -105,6 +105,47 @@ static void closeArchive(u64 archive)
     (void)sendSyncRequest(*FSUSER_HANDLE_SLOT);
 }
 
+static s32 deleteFile(u64 archive, const char *path, u32 pathSize)
+{
+    volatile u32 *commandBuffer = getThreadCommandBuffer();
+    s32 result;
+
+    commandBuffer[0] = 0x08040142u;
+    commandBuffer[1] = 0;
+    commandBuffer[2] = (u32)archive;
+    commandBuffer[3] = (u32)(archive >> 32);
+    commandBuffer[4] = PATH_ASCII;
+    commandBuffer[5] = pathSize;
+    commandBuffer[6] = (pathSize << 14) | 2u;
+    commandBuffer[7] = (u32)path;
+    result = sendSyncRequest(*FSUSER_HANDLE_SLOT);
+    return result != 0 ? result : (s32)commandBuffer[1];
+}
+
+static s32 renameFile(u64 archive, const char *source, u32 sourceSize,
+    const char *destination, u32 destinationSize)
+{
+    volatile u32 *commandBuffer = getThreadCommandBuffer();
+    s32 result;
+
+    commandBuffer[0] = 0x08050244u;
+    commandBuffer[1] = 0;
+    commandBuffer[2] = (u32)archive;
+    commandBuffer[3] = (u32)(archive >> 32);
+    commandBuffer[4] = PATH_ASCII;
+    commandBuffer[5] = sourceSize;
+    commandBuffer[6] = (u32)archive;
+    commandBuffer[7] = (u32)(archive >> 32);
+    commandBuffer[8] = PATH_ASCII;
+    commandBuffer[9] = destinationSize;
+    commandBuffer[10] = (sourceSize << 14) | 0x402u;
+    commandBuffer[11] = (u32)source;
+    commandBuffer[12] = (destinationSize << 14) | 0x802u;
+    commandBuffer[13] = (u32)destination;
+    result = sendSyncRequest(*FSUSER_HANDLE_SLOT);
+    return result != 0 ? result : (s32)commandBuffer[1];
+}
+
 static void ensureCaptureDirectory(void)
 {
     static const char directory3ds[] = "/3ds";
@@ -135,17 +176,20 @@ static s32 setFileSize(u32 fileHandle, u64 size)
 }
 
 __attribute__((used, noinline, section(".text.download_patch")))
-void DownloadPatch_SaveBankData(const void *bankData)
+int DownloadPatch_SaveBankData(const void *bankData)
 {
     static const char emptyPath[1] = { 0 };
     static const char bankDataPath[] = "/3ds/Bank/bankdata.bin";
+    static const char bankDataTempPath[] = "/3ds/Bank/bankdata.tmp";
+    static const char bankDataBackupPath[] = "/3ds/Bank/bankdata.bak";
+    u64 archive = 0;
     u32 fileHandle = 0;
     u32 bytesWritten = 0;
     s32 openResult;
     s32 writeResult;
 
     if (bankData == (const void *)0) {
-        return;
+        return 0;
     }
 
     ensureCaptureDirectory();
@@ -159,18 +203,18 @@ void DownloadPatch_SaveBankData(const void *bankData)
         emptyPath,
         sizeof(emptyPath),
         PATH_ASCII,
-        bankDataPath,
-        sizeof(bankDataPath),
+        bankDataTempPath,
+        sizeof(bankDataTempPath),
         FS_OPEN_READ | FS_OPEN_WRITE | FS_OPEN_CREATE,
         0);
 
     if (openResult != 0) {
-        return;
+        return 0;
     }
 
     if (setFileSize(fileHandle, BANKDATA_SIZE) != 0) {
         (void)FSFILE_CLOSE(&fileHandle);
-        return;
+        return 0;
     }
 
     writeResult = FSFILE_WRITE(
@@ -184,8 +228,22 @@ void DownloadPatch_SaveBankData(const void *bankData)
     if (writeResult != 0 || bytesWritten != BANKDATA_SIZE) {
         (void)setFileSize(fileHandle, 0);
         (void)FSFILE_CLOSE(&fileHandle);
-        return;
+        return 0;
     }
 
-    (void)FSFILE_CLOSE(&fileHandle);
+    if (FSFILE_CLOSE(&fileHandle) != 0 || openSdmcArchive(&archive) != 0) {
+        return 0;
+    }
+
+    (void)deleteFile(archive, bankDataBackupPath, sizeof(bankDataBackupPath));
+    (void)renameFile(archive, bankDataPath, sizeof(bankDataPath),
+        bankDataBackupPath, sizeof(bankDataBackupPath));
+    writeResult = renameFile(archive, bankDataTempPath, sizeof(bankDataTempPath),
+        bankDataPath, sizeof(bankDataPath));
+    if (writeResult != 0) {
+        (void)renameFile(archive, bankDataBackupPath, sizeof(bankDataBackupPath),
+            bankDataPath, sizeof(bankDataPath));
+    }
+    closeArchive(archive);
+    return writeResult == 0;
 }

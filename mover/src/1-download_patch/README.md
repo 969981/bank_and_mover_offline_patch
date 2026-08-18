@@ -14,6 +14,16 @@ The patch runs after the complete `0xBB518` BankObject has been downloaded. It d
 
 A local file error does not change the result of the original online operation.
 
+## Usage notes
+
+- This Mover download patch is retained only for interested users to study or test. It is not part of the supported offline-patch workflow.
+- Mover reaches this download only after compatible game software has been selected and the original program connects to the server.
+- The output path is the same `/3ds/Bank/bankdata.bin` used by the Bank download patch. The two patches therefore share and overwrite one local file rather than maintaining separate copies.
+- Mover downloads the Bank object during this server phase even when the selected game has no Pokemon eligible for transfer.
+- In the normal official flow, a user who can run Mover already has bankdata on the server. Mover was obtained through the Bank download menu, and reaching that menu means Bank has already created and synchronized new bankdata even for a first-time Bank user. Mover consequently consumes an existing Bank object instead of creating the account's initial object.
+
+The supported workflow uses the Bank download patch to obtain `bankdata.bin`, then uses the offline patches with Bank and Mover. It does not require the Mover download patch. This avoids ambiguity over which application last replaced the shared file.
+
 ## Source layout
 
 - `main.s`: hook, trampoline, executable bounds, and `.importobj`.

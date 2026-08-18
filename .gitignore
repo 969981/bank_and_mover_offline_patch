@@ -13,6 +13,8 @@ armips-symbols.txt
 # Decrypted/extracted title images and private runtime data
 /bank/*.code
 /mover/*.code
+/bank/romfs/
+/mover/romfs/
 /bank/bankdata.bin
 /mover/bankdata.bin
 *.3ds
