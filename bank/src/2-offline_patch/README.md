@@ -10,10 +10,14 @@ file while retaining the stock game-selection, Bank Box, and game-save logic.
 | `sd:/3ds/Bank/bankdata.bin` | Current complete Bank file (`0xBB518` bytes) |
 | `sd:/3ds/Bank/bankdata.tmp` | Fully written candidate used during saving |
 | `sd:/3ds/Bank/bankdata.bak` | Previous complete file retained during commit |
+| `sd:/3ds/Bank/bankdata.bin.break` | Byte-for-byte copy of an unusable primary file |
+| `sd:/3ds/Bank/bankdata.bak.break` | Byte-for-byte copy of an unusable backup file |
 
 The patch creates `sd:/3ds` and `sd:/3ds/Bank` when a local file must be
-created. An existing invalid or short `bankdata.bin` is rejected and is never
-silently replaced.
+created. An invalid or missing `bankdata.bin` is restored from a readable,
+valid `bankdata.bak`. If neither file is recoverable, every existing invalid
+file is copied to its corresponding `.break` path before stock first-use
+creation runs. Missing files do not produce placeholder `.break` files.
 
 ## Overall route
 
@@ -25,10 +29,22 @@ Title / account checks
         │             no remote connection job
         ▼
 Inspect bankdata.bin header and exact length
-        ├── invalid/read error ──► error; preserve file; stop
-        └── usable result
-              ├── valid ────────► existing-record mode 4
-              └── missing ──────► first-use mode 5
+        ├── valid ──────────────► existing-record mode 4
+        └── missing/invalid
+                  │
+                  ▼
+             Inspect bankdata.bak
+                  ├── valid ────► read all 0xBB518 bytes
+                  │                copy to bankdata.bin; preserve .bak
+                  │                no .break files
+                  │                └────────► existing-record mode 4
+                  └── missing/invalid
+                            │
+                            ▼
+                 Copy each existing invalid file to .break
+                            ├── initial failure ─► retry up to 3 times per file
+                            └── copied / all 4 attempts failed / both absent
+                                           └──► first-use mode 5
                                       │
                                       ▼
 Refresh runtime offline ticket to console time + 999 days
@@ -36,18 +52,38 @@ Refresh runtime offline ticket to console time + 999 days
                 ▼
 Stock first-use decision
         ├── mode 4 ──────────────► feature menu
-        └── mode 5 ─► stock Bank initialization ─► local atomic commit
+        └── mode 5 ─► stock first-use messages
+                         │
+                         ▼
+                    skip remote record-ID substates 4-5
+                         │
+                         ▼
+                    stock empty-object initialization
+                    (localized boxes and creation date)
+                         │
+                         ▼
+                    write bankdata.bin directly
                                                     │
                                                     ▼
                                                feature menu
 ```
 
-The startup record check reads only the four-byte format header at file offset
-`0x15C`; it does not load the complete Bank body. The stock state 9 decision is
-preserved. A missing file therefore uses the application's own first-use setup
+The normal startup record check reads only the four-byte format header at file
+offset `0x15C`. Recovery additionally reads and validates the complete backup
+before copying it. A valid primary or recoverable backup never creates a
+`.break` file. If no valid recovery source exists, each invalid file that is
+actually present is copied in full; first-use creation proceeds only after all
+copies have either succeeded or exhausted the initial attempt plus three retries. Copy failure does not
+remove the original invalid file and does not block first use. If both files
+are absent, first use begins directly.
+The stock state 9 decision is preserved. When no valid primary or backup exists,
+the application therefore uses its own first-use setup
 to obtain console/account values, initialize 100 localized Bank Boxes, and set
-the real creation date. Only the final remote creation is replaced with a local
-write.
+the real creation date. The remote record-ID acquisition substates are skipped;
+the native empty-object initializer still runs. The final remote creation is
+replaced with a checked direct write to `bankdata.bin`. A failed first write
+removes its partial file. The normal save path continues to use `.tmp` and
+maintain `.bak`.
 
 The ticket expiry exists in runtime state. Existing identity fields and the
 creation date stored in `bankdata.bin` are not rewritten by the ticket patch.
@@ -62,6 +98,9 @@ Stock game selection and game-software checks
         │
         ▼
 "Connecting to the local offline Bank data..." (at least 2 seconds)
+        │
+        ▼
+Close the stock rotating wait UI and its looping sound
         │
         ▼
 Read exactly 0xBB518 bytes from bankdata.bin
@@ -87,6 +126,10 @@ The former Pokemon HOME menu entry is named **Choose Language** and is routed to
 the stock language-selection flow. It does not enter the HOME Bank-data path.
 After a language change, the return-to-title variant selects an appended blank
 message so the newly selected font does not draw the previous language's text.
+Before returning to the title screen, the patch copies the pending language and
+Japanese Kanji setting into the stock persistent-settings object, starts native
+save mode 0, and waits for it to complete. The selected language therefore
+survives an immediate restart without requiring another title-screen action.
 
 ## Saving, commit, and rollback
 
@@ -126,10 +169,13 @@ LayeredFS resources cover all ten supported languages:
 
 - The initial Internet message becomes a generic **Connecting...** prompt.
 - The post-selection service message identifies the local offline Bank data.
+- When that local connection delay completes, the patch explicitly closes the
+  stock rotating wait UI so its looping sound cannot continue into the Bank Box.
 - The save message identifies the local offline file instead of a server.
 - Normal state 20 exits display **Disconnecting...** and complete their local
   first phase after 1.5 seconds without allocating a remote disconnect job.
-- The language-change state 21 uses the blank message described above.
+- The language-change state 21 uses the blank message described above and
+  completes the native local-settings save before returning to the title screen.
 
 Test with a backup in an emulator before using the patch on hardware.
 

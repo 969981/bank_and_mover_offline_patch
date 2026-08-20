@@ -27,7 +27,7 @@
 .org MoverRemoteCheckState_Update
     b OfflinePatch_RemoteCheckUpdate
 .org MoverTransferEligibilityState_Update
-    b OfflinePatch_EligibilityUpdate
+    b OfflinePatch_EligibilityEntry
 
 // The native initializer has already selected the local-data message and reset
 // its timer. Delay entry into cartridge reading/conversion for two seconds so
@@ -70,16 +70,22 @@
 .org MoverFlow_RemoteCheckSuccessState
     moveq r0,11
 
-// State 0 no longer allocates a remote job. The local stage operation is
-// synchronous, so state 1 advances directly to the native cartridge-save state 3.
-// 状态 0 不再分配远端作业。本地暂存同步完成，因此状态 1 直接进入原生卡带保存状态 3。
+// State 0 no longer allocates a remote job. A successful synchronous local
+// stage enters state 2, which keeps the save message visible for two seconds
+// before advancing to the native cartridge-save state 3.
+// 状态 0 不再分配远端作业。同步本地暂存成功后进入 state 2，让保存提示显示
+// 两秒，再继续进入原版卡带保存 state 3。
 .org MoverSave_SkipRemoteJob
     mov r0,1
     b 0x0024A4C0
 .org MoverSave_StageCall
     bl OfflinePatch_Stage
 .org MoverSave_AfterStageState
-    movne r0,3
+    movne r0,2
+.org MoverSave_StageWaitState
+    mov r0,r4
+    bl OfflinePatch_SaveDisplayDelayUpdate
+    b MoverSave_UpdateEpilogue
 
 // Local commit and rollback are synchronous; skip their callback-wait states.
 // 本地提交和回滚均为同步操作；跳过对应的回调等待状态。
@@ -95,6 +101,19 @@
 .org OfflinePatch_CodeStart
 .area OfflinePatch_CodeEnd-OfflinePatch_CodeStart
 OfflinePatch_PayloadBegin:
+OfflinePatch_EligibilityEntry:
+    // A nonempty downloaded Transfer Box is handled by the stock internal
+    // substates 7, 8, and 15, which display message 5 and then return cleanly.
+    // 下载到非空传送盒时，交回原版内部 substate 7、8、15；它们会显示
+    // 消息 5，并在确认后正常返回。
+    ldr r1,[r0,#0x10]
+    cmp r1,#7
+    bhs OfflinePatch_EligibilityResumeNative
+    b OfflinePatch_EligibilityUpdate
+OfflinePatch_EligibilityResumeNative:
+    push {r4-r6,lr}
+    b MoverTransferEligibilityState_Update + 4
+
 OfflinePatch_GetPokemonEntry:
     push {r0,lr}
     mov r1,#125

@@ -28,6 +28,7 @@ enum {
 #define BANK_METADATA_VALUE ((BankMetadataValue)0x001D5EC0u)
 #define STATE_DELAY_ELAPSED ((StateDelayElapsed)0x001D5BB0u)
 #define STATE_DELAY_RESET ((StateDelayReset)0x00229DB4u)
+#define WAITING_UI_HIDE ((WaitingUiHide)0x001D5F50u)
 
 typedef s32 (*OpenDirect)(volatile u32 *, u32 *, u32, u32, u32, const void *, u32,
     u32, const void *, u32, u32, u32);
@@ -38,6 +39,7 @@ typedef s32 (*FileGetSize)(u32 *, u64 *);
 typedef u32 (*BankMetadataValue)(void *);
 typedef int (*StateDelayElapsed)(void *, u32);
 typedef void (*StateDelayReset)(void *);
+typedef void (*WaitingUiHide)(void *);
 
 static const char emptyPath[1] = {0};
 static const char directory3ds[] = "/3ds";
@@ -45,6 +47,10 @@ static const char directoryBank[] = "/3ds/Bank";
 static const char bankPath[] = "/3ds/Bank/bankdata.bin";
 static const char tempPath[] = "/3ds/Bank/bankdata.tmp";
 static const char backupPath[] = "/3ds/Bank/bankdata.bak";
+#define BROKEN_BANK_PATH ((const char *)0x00313F80u)
+#define BROKEN_BACKUP_PATH ((const char *)0x00313FA0u)
+#define BROKEN_BANK_PATH_SIZE 29u
+#define BROKEN_BACKUP_PATH_SIZE 29u
 
 static volatile u32 *commandBuffer(void)
 {
@@ -236,15 +242,20 @@ static int resultIsNotFound(s32 result)
         RESULT_SUMMARY_NOT_FOUND;
 }
 
-static int writeTemporary(const void *data)
+static int writeCompleteFile(const char *path,u32 pathSize,const void *data)
 {
     u32 h=0,n=0; s32 r,closeResult=0;
     ensureDirectories();
-    r=openFile(tempPath,sizeof(tempPath),OPEN_READ|OPEN_WRITE|OPEN_CREATE,&h);
+    r=openFile(path,pathSize,OPEN_READ|OPEN_WRITE|OPEN_CREATE,&h);
     if (!r) r=setSize(h,BANKDATA_SIZE);
     if (!r) r=FILE_WRITE(&h,&n,0,data,BANKDATA_SIZE,WRITE_FLUSH);
     if (h) closeResult=FILE_CLOSE(&h);
     return !r && !closeResult && n==BANKDATA_SIZE;
+}
+
+static int writeTemporary(const void *data)
+{
+    return writeCompleteFile(tempPath,sizeof(tempPath),data);
 }
 
 static int commitTemporary(void)
@@ -268,6 +279,103 @@ static int commitTemporary(void)
         (void)restoreResult;
     }
     closeArchive(a); return !r;
+}
+
+static int writeInitialBank(const void *data)
+{
+    u64 a=0;
+    int complete;
+
+    /* First use writes only the final bankdata.bin. If a size, write, short-write,
+       flush, or close check fails, remove the incomplete new file. */
+    /* 首次使用只写最终的 bankdata.bin。若长度设置、写入、短写、刷新或关闭检查
+       失败，则删除不完整的新文件。 */
+    complete=writeCompleteFile(bankPath,sizeof(bankPath),data);
+    if (!complete && !openArchive(&a)) {
+        (void)pathCommand(0x08040142u,a,bankPath,sizeof(bankPath));
+        closeArchive(a);
+    }
+    return complete;
+}
+
+enum {
+    LOCAL_FILE_INVALID = -1,
+    LOCAL_FILE_MISSING = 0,
+    LOCAL_FILE_VALID = 1
+};
+
+static int inspectBankFile(const char *path,u32 pathSize)
+{
+    u8 header[4];
+    u32 h=0,n=0; u64 size=0; s32 r,closeResult=0;
+
+    r=openFile(path,pathSize,OPEN_READ,&h);
+    if (r) return resultIsNotFound(r)?LOCAL_FILE_MISSING:LOCAL_FILE_INVALID;
+    r=FILE_GET_SIZE(&h,&size);
+    if (!r && size==BANKDATA_SIZE) r=FILE_READ(&h,&n,0x15Cu,header,sizeof(header));
+    else if (!r) r=-1;
+    closeResult=FILE_CLOSE(&h);
+    if (!r && !closeResult && n==sizeof(header) && validHeader(header)) return LOCAL_FILE_VALID;
+    return LOCAL_FILE_INVALID;
+}
+
+static int preserveBrokenFile(const char *source,u32 sourceSize,
+    const char *destination,u32 destinationSize)
+{
+    u8 buffer[0x400];
+    u32 sourceHandle=0,destinationHandle=0,readCount=0,writeCount=0;
+    u32 size32=0,offset=0,chunk;
+    u64 size=0,archive=0;
+    s32 r,sourceClose=0,destinationClose=0;
+
+    r=openFile(source,sourceSize,OPEN_READ,&sourceHandle);
+    if (!r) r=FILE_GET_SIZE(&sourceHandle,&size);
+    if (!r && (size>>32)) r=-1;
+    if (!r) size32=(u32)size;
+    if (!r) r=openFile(destination,destinationSize,
+        OPEN_READ|OPEN_WRITE|OPEN_CREATE,&destinationHandle);
+    if (!r) r=setSize(destinationHandle,size);
+    while (!r && offset<size32) {
+        u32 remaining=size32-offset;
+        chunk=(remaining>sizeof(buffer))?sizeof(buffer):(u32)remaining;
+        readCount=0;
+        writeCount=0;
+        r=FILE_READ(&sourceHandle,&readCount,offset,buffer,chunk);
+        if (!r && readCount!=chunk) r=-1;
+        if (!r) r=FILE_WRITE(&destinationHandle,&writeCount,offset,buffer,chunk,WRITE_FLUSH);
+        if (!r && writeCount!=chunk) r=-1;
+        offset+=chunk;
+    }
+    if (destinationHandle) destinationClose=FILE_CLOSE(&destinationHandle);
+    if (sourceHandle) sourceClose=FILE_CLOSE(&sourceHandle);
+    if (!r && !sourceClose && !destinationClose && offset==size32) return 1;
+
+    /* Never leave a partial .break file that could be mistaken for a complete copy. */
+    /* 不保留可能被误认为完整副本的残缺 .break 文件。 */
+    if (!openArchive(&archive)) {
+        (void)pathCommand(0x08040142u,archive,destination,destinationSize);
+        closeArchive(archive);
+    }
+    return 0;
+}
+
+static int restoreBankFromBackup(u8 *state)
+{
+    u8 *flow=*(u8 **)(state+8);
+    u8 *object=flow?*(u8 **)(flow+0xCC):0;
+    u32 h=0,n=0; u64 size=0; s32 r,closeResult=0;
+
+    if (!object || *(u32 *)object!=0x003626FCu) return 0;
+    r=openFile(backupPath,sizeof(backupPath),OPEN_READ,&h);
+    if (!r) r=FILE_GET_SIZE(&h,&size);
+    if (!r && size==BANKDATA_SIZE) r=FILE_READ(&h,&n,0,object+8,BANKDATA_SIZE);
+    else if (!r) r=-1;
+    if (h) closeResult=FILE_CLOSE(&h);
+    if (r || closeResult || n!=BANKDATA_SIZE || !validHeader(object+8+0x15C)) return 0;
+
+    /* Preserve bankdata.bak and create a checked byte-for-byte bankdata.bin copy. */
+    /* 保留 bankdata.bak，并创建经过完整检查、逐字节一致的 bankdata.bin 副本。 */
+    return writeInitialBank(object+8);
 }
 
 __attribute__((used,noinline,section(".text.offline")))
@@ -295,6 +403,16 @@ int OfflinePatch_PostSelectionConnectionUpdate(u8 *state)
     }
     if (!STATE_DELAY_ELAPSED(state,2000u)) return 0;
     state[0x61]=0;
+
+    /* The native initializer starts the rotating wait UI and its looping sound.
+       Because the offline path does not create the native remote job, close the
+       wait UI explicitly before leaving this state. */
+    /* 原版初始化函数会启动旋转等待界面及其循环音效。离线路径不会创建原版
+       远端作业，因此必须在离开此状态前显式关闭等待界面。 */
+    {
+        void *manager=*(void **)(state+0x38);
+        if (manager) WAITING_UI_HIDE(manager);
+    }
     state[0x30]=4; return 1;
 }
 
@@ -312,36 +430,60 @@ __attribute__((used,noinline,section(".text.offline")))
 int OfflinePatch_InitialRemoteRecordUpdate(u8 *state)
 {
     u8 *shared=*(u8 **)(state+0x28);
-    u8 header[4];
-    u32 h=0,n=0; u64 size=0; s32 r,closeResult=0;
+    int bankStatus,backupStatus;
 
     if (!shared) { state[0x30]=3; return 1; }
-    r=openFile(bankPath,sizeof(bankPath),OPEN_READ,&h);
-    if (r) {
-        /* Only a genuinely missing file selects the stock first-use path. */
-        /* 只有文件确实不存在时才选择原版首次使用路径。 */
-        if (resultIsNotFound(r)) {
-            shared[0x20]='5';
-            *(u16 *)(shared+0x48)=0;
-            shared[0x4C]=0; shared[0x4D]=0; shared[0x4E]=0;
-            state[0x30]=4;
-        } else state[0x30]=3;
-        return 1;
-    }
-
-    r=FILE_GET_SIZE(&h,&size);
-    if (!r && size==BANKDATA_SIZE) r=FILE_READ(&h,&n,0x15Cu,header,sizeof(header));
-    else if (!r) r=-1;
-    closeResult=FILE_CLOSE(&h);
-
-    if (!r && !closeResult && n==sizeof(header) && validHeader(header)) {
+    bankStatus=inspectBankFile(bankPath,sizeof(bankPath));
+    if (bankStatus==LOCAL_FILE_VALID) {
         /* ASCII '4' is the stock existing-record mode; '5' is first use. */
         /* ASCII“4”是原版既有记录模式；“5”表示首次使用。 */
         shared[0x20]='4';
         *(u16 *)(shared+0x48)=0;
         shared[0x4C]=0; shared[0x4D]=0; shared[0x4E]=0;
         state[0x30]=4;
-    } else state[0x30]=3;
+        return 1;
+    }
+
+    /* A missing or invalid primary always checks the backup first. A valid
+       backup must be restored; a missing or invalid backup selects stock
+       first-use creation instead. */
+    /* 主文件缺失或无效时一律优先检查备份。有效备份必须恢复；备份缺失或
+       无效时则进入原版首次创建。 */
+    backupStatus=inspectBankFile(backupPath,sizeof(backupPath));
+    if (backupStatus==LOCAL_FILE_VALID) {
+        if (restoreBankFromBackup(state)) {
+            shared[0x20]='4';
+            *(u16 *)(shared+0x48)=0;
+            shared[0x4C]=0; shared[0x4D]=0; shared[0x4E]=0;
+            state[0x30]=4;
+        } else {
+            state[0x30]=3;
+        }
+    } else {
+        int attempt;
+        /* Preserve only files that exist but cannot be recognized. After the
+           initial failure, retry each copy up to three times, but do not block
+           stock first use if all four attempts fail. The original invalid
+           files are never removed. */
+        /* 只保全实际存在但无法识别的文件。初次失败后，每个副本最多重试三次；即使四次尝试全部失败，
+           也不阻止原版首次创建。原始无效文件始终不会被删除。 */
+        if (bankStatus==LOCAL_FILE_INVALID) {
+            for (attempt=0;attempt<4;attempt++) {
+                if (preserveBrokenFile(bankPath,sizeof(bankPath),
+                    BROKEN_BANK_PATH,BROKEN_BANK_PATH_SIZE)) break;
+            }
+        }
+        if (backupStatus==LOCAL_FILE_INVALID) {
+            for (attempt=0;attempt<4;attempt++) {
+                if (preserveBrokenFile(backupPath,sizeof(backupPath),
+                    BROKEN_BACKUP_PATH,BROKEN_BACKUP_PATH_SIZE)) break;
+            }
+        }
+        shared[0x20]='5';
+        *(u16 *)(shared+0x48)=0;
+        shared[0x4C]=0; shared[0x4D]=0; shared[0x4E]=0;
+        state[0x30]=4;
+    }
     return 1;
 }
 
@@ -406,7 +548,8 @@ int OfflinePatch_SaveDisplayDelayUpdate(u8 *state)
 __attribute__((used,noinline,section(".text.offline")))
 int OfflinePatch_CreateInitial(void *remote,const void *data,u32 size)
 {
-    (void)remote; return size==BANKDATA_SIZE && writeTemporary(data) && commitTemporary();
+    (void)remote;
+    return size==BANKDATA_SIZE && writeInitialBank(data);
 }
 
 __attribute__((used,noinline,section(".text.offline")))

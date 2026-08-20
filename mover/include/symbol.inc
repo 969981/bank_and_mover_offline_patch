@@ -81,6 +81,8 @@
 ; 0x0024A0C4 内完整文件的暂存、提交和回滚调用位置。
 .definelabel MoverSave_StageCall,                0x0024A240
 .definelabel MoverSave_AfterStageState,          0x0024A248
+.definelabel MoverSave_StageWaitState,           0x0024A258
+.definelabel MoverSave_UpdateEpilogue,            0x0024A5DC
 .definelabel MoverSave_CommitCall,               0x0024A3E4
 .definelabel MoverSave_AfterCommitState,         0x0024A3EC
 .definelabel MoverSave_RollbackCall,             0x0024A420

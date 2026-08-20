@@ -41,7 +41,7 @@ Stock cartridge read, filtering, and Pokemon conversion
                                               ▼
                            load bankdata.bin and merge candidates
                                 ├── invalid/missing ─► error
-                                ├── Transfer Box busy ► reject; preserve file
+                                ├── Transfer Box busy ► stock message 5; preserve file
                                 └── empty box ───────► stock confirmation UI
 ```
 
@@ -74,6 +74,9 @@ Write bankdata.tmp + set size + flush + verify bytes written
         └── success
               │
               ▼
+Save-progress screen remains visible for at least 2 seconds
+              │
+              ▼
 Stock source-cartridge save
         ├── failed ─► delete bankdata.tmp ─► keep bin and bak
         └── succeeded
@@ -85,6 +88,8 @@ Delete old bak ─► rename bin to bak ─► rename tmp to bin
 ```
 
 Staging, commit, and rollback replace the corresponding remote transactions.
+After the synchronous stage write, a nonblocking state-machine delay keeps the
+save screen visible for at least two seconds without repeating the write.
 Commit occurs only after the original source-game save succeeds. Delete, rename,
 close, size, write-length, restoration, and rollback results are checked.
 
@@ -100,6 +105,7 @@ LayeredFS resources cover all ten supported languages:
 - The local Bank-data message is shown for at least 2 seconds before native
   cartridge reading and conversion begin.
 - The save message identifies the local offline Bank data instead of a server.
+  It remains visible for at least 2 seconds after the complete local stage write.
 - The disconnect text is generic. Its existing 1.5-second local first phase is
   unchanged and no remote disconnect job is allocated.
 

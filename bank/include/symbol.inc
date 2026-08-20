@@ -64,6 +64,10 @@
 .definelabel BankFlow_PostSelectionMetadataPath, 0x002A58B4
 .definelabel StateTimer_Reset,                  0x00229DB4
 .definelabel StateTimer_HasElapsed,             0x001D5BB0
+.definelabel StateLocalSave_Poll,               0x002B4A20
+.definelabel StateLocalSave_Begin,              0x002B4AB4
+.definelabel LocalSettings_SetLanguage,          0x002BAF00
+.definelabel WaitingUi_Hide,                    0x001D5F50
 .definelabel BankDataSyncState_Update,          0x002AF460
 .definelabel BankDataSyncState_Initialize,      0x002AFE38
 .definelabel HomeRollbackState_Update,           0x002AFE94

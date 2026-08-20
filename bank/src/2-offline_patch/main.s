@@ -45,7 +45,7 @@
 // the real disconnect job and complete its first phase locally after 1.5 s.
 // 保留原版断开提示界面和最终清理，但跳过真实断开作业，并在 1.5 秒后于本地完成首阶段。
 .org DisconnectCleanupState_Update
-    b OfflinePatch_DisconnectUpdate
+    b OfflinePatch_DisconnectWithLanguageSave
 .org DisconnectCleanup_SkipRemoteJob
     mov r0,#0
     str r0,[r4,#0x38]
@@ -58,6 +58,15 @@
 // 仅替换远端作业创建与上传，同步本地提交成功后直接进入 state 8。
 .org BankCreateState_Update + 0x58
     mov r0,#1
+    b BankCreateState_Update + 0x238
+// After the three stock first-use messages, skip only the remote record-ID
+// acquisition substates 4-5. Continue at substate 6 so the native empty-object,
+// localized box-name, and creation-date initializer still runs before the
+// local write hook.
+// 原版三段首次使用提示结束后，只跳过远端记录 ID 获取子状态 4-5。继续进入
+// 子状态 6，使原版空对象、本地化盒名及创建日期初始化仍在本地写入钩子前执行。
+.org BankCreateState_Update + 0x1E4
+    mov r0,#6
     b BankCreateState_Update + 0x238
 .org BankCreateState_Update + 0x2F4
     bl OfflinePatch_CreateInitial
@@ -118,7 +127,7 @@ OfflinePatch_RedirectHomeToLanguage:
     ldr r0,[r0,#0x10]
     ldr r0,[r0,#0x38]
     cmp r0,#0
-    blne 0x001D5F50
+    blne WaitingUi_Hide
     mov r0,#1
     pop {r4,pc}
 
@@ -128,6 +137,69 @@ OfflinePatch_SelectDisconnectMessage:
     moveq r1,#0x0D
     movne r1,#0x60
     bx lr
+
+// State 21 is the language-return variant. Copy the pending language fields
+// into the stock persistent settings object before starting its native save
+// transaction. Wait for completion, then continue through the ordinary
+// offline disconnect delay.
+// state 21 是语言返回分支。先把待提交语言字段复制到原版持久化设置对象，
+// 再启动其原生保存事务；等待保存完成后，继续普通的离线断开延时。
+OfflinePatch_DisconnectWithLanguageSave:
+    push {r4,lr}
+    mov r4,r0
+    ldrb r1,[r4,#0x3C]
+    cmp r1,#0
+    beq @@disconnect
+    ldr r1,[r4,#0x10]
+    cmp r1,#0
+    beq @@beginSave
+    cmp r1,#1
+    bne @@disconnect
+    bl StateLocalSave_Poll
+    cmp r0,#0
+    beq @@pending
+    cmp r0,#1
+    bne @@failed
+    mov r1,#2
+    str r1,[r4,#0x10]
+    mov r0,r4
+    bl StateTimer_Reset
+@@pending:
+    mov r0,#0
+    pop {r4,pc}
+@@beginSave:
+    ldr r3,[r4,#8]
+    cmp r3,#0
+    beq @@disconnect
+    ldr r0,[r3,#0x74]
+    ldr r2,[r3,#0xF0]
+    cmp r0,#0
+    cmnne r2,#0
+    beq @@disconnect
+    ldr r1,[r2,#4]
+    cmp r1,#0
+    beq @@disconnect
+    ldrb r2,[r2,#8]
+    bl LocalSettings_SetLanguage
+    mov r0,r4
+    // Use native save mode 0, matching the stock language-commit path.
+    // 使用与原版语言提交路径一致的本地保存模式 0。
+    mov r1,#0
+    bl StateLocalSave_Begin
+    mov r1,#1
+    str r1,[r4,#0x10]
+    mov r0,#0
+    pop {r4,pc}
+@@failed:
+    mov r1,#3
+    strb r1,[r4,#0x30]
+    mov r0,#1
+    pop {r4,pc}
+@@disconnect:
+    mov r0,r4
+    bl OfflinePatch_DisconnectUpdate
+    pop {r4,pc}
+    .pool
 
 // Load the local file once, then resume the original state at substate 6 so
 // its account-metadata copy and selected-game save callbacks remain intact.
@@ -153,6 +225,17 @@ OfflinePatch_BankDataSyncEntry:
     mov r0,#1
     bx lr
     .pool
+
+// Keep recovery path strings in the remaining verified executable padding so
+// the linked C payload still fits inside the replaced ticket-state body.
+// 将恢复路径字符串放进剩余的已验证可执行空位，使链接后的 C 载荷仍能容纳在
+// 被替换的票据状态函数体内。
+.org 0x00313F80
+OfflinePatch_BrokenBankPath:
+    .asciiz "/3ds/Bank/bankdata.bin.break"
+.org 0x00313FA0
+OfflinePatch_BrokenBackupPath:
+    .asciiz "/3ds/Bank/bankdata.bak.break"
 
 .endarea
 

@@ -344,7 +344,15 @@ int OfflinePatch_EligibilityUpdate(u8 *state)
 {
     int loaded=loadLocalBank(state);
     if (loaded<0) state[0x30]=5;
-    else if (loaded>0) state[0x30]=0x0F;
+    else if (loaded>0) {
+        /* Transfer-Box occupancy is an internal native message path, not outer
+           result 0x0F. Resume at substate 7 so message 5 is displayed and the
+           stock acknowledgement path returns result 0x10. */
+        /* 传送盒占用属于原版内部消息路径，并非外层结果 0x0F。转入 substate 7，
+           由原版显示消息 5，并在确认后通过结果 0x10 正常返回。 */
+        *(u32 *)(state+0x10)=7;
+        return 0;
+    }
     else state[0x30]=4;
     return 1;
 }
@@ -357,6 +365,23 @@ int OfflinePatch_NoTransferUpdate(u8 *state)
     /* 保留原版连接界面的计时，但不创建或等待最后的不传送远端事务。 */
     if (!STATE_DELAY_ELAPSED(state,1500u)) return 0;
     state[0x30]=3; return 1;
+}
+
+__attribute__((used,noinline,section(".text.offline")))
+int OfflinePatch_SaveDisplayDelayUpdate(u8 *state)
+{
+    /* The local stage write is synchronous. Reuse the stock callback byte as
+       a private marker and keep the save message alive for at least two seconds. */
+    /* 本地暂存写入是同步的。复用原版回调字节作为私有标记，让保存提示至少显示两秒。 */
+    if (!state[0x44]) {
+        STATE_DELAY_RESET(state);
+        state[0x44]=1;
+        return 0;
+    }
+    if (!STATE_DELAY_ELAPSED(state,2000u)) return 0;
+    state[0x44]=0;
+    *(u32 *)(state+0x10)=3;
+    return 1;
 }
 
 __attribute__((used,noinline,section(".text.offline")))
