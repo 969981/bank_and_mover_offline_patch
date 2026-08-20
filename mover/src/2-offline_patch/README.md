@@ -109,6 +109,11 @@ LayeredFS resources cover all ten supported languages:
 - The disconnect text is generic. Its existing 1.5-second local first phase is
   unchanged and no remote disconnect job is allocated.
 
+The stock functions still create and destroy the waiting UI, spinner, and
+rhythmic sound. Offline updates only report completion through the original
+state object; they do not hide the UI or stop sound early, so the native state
+exit path remains the single cleanup owner.
+
 Test in an emulator and back up `bankdata.bin` before using the patch on
 hardware.
 

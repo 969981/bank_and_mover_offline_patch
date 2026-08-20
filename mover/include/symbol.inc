@@ -47,6 +47,11 @@
 ; -----------------------------------------------------------------------------
 .definelabel MoverFlow_CreateStateObject,       0x0019CEE4
 .definelabel MoverFlow_SelectNextState,         0x00242BA0
+.definelabel MoverUi_SetMessageLine,            0x0019C410
+.definelabel MoverHidManager,                   0x00359394
+.definelabel MoverTitleState_Update,            0x00249F20
+.definelabel MoverTitleUi_Create,               0x0024B9E4
+.definelabel MoverTitleUi_HomeMessageCall,      0x0024BA84
 .definelabel MoverDisconnectState_Update,       0x0024709C
 .definelabel MoverDisconnectState_Initialize,   0x00247234
 .definelabel MoverDisconnect_SkipRemoteJob,     0x00247290
@@ -64,6 +69,8 @@
 .definelabel MoverTransferCommitState_Update,      0x0024A0C4
 .definelabel MoverDownload_ConsumeBankData,        0x0025C978
 .definelabel MoverGetPokemonState_Update,           0x002455D0
+.definelabel MoverGetPokemonState_Initialize,       0x00246A2C
+.definelabel MoverGetPokemon_BankMessageIdLoad,     0x00246A5C
 
 ; Remote legality checks embedded in the native candidate-conversion state.
 ; 原版候选转换状态中嵌入的远端合法性检查。
@@ -87,6 +94,13 @@
 .definelabel MoverSave_AfterCommitState,         0x0024A3EC
 .definelabel MoverSave_RollbackCall,             0x0024A420
 .definelabel MoverSave_AfterRollbackState,       0x0024A428
+
+; The current binary has no external code or data reference into this complete
+; unreachable function body. The combined patch uses it only for mode wrappers.
+; 当前二进制没有从该完整不可达函数体外部进入的代码或数据引用。合并补丁仅将其
+; 用于模式包装函数。
+.definelabel MoverCombine_CodeCaveStart,          0x00261C74
+.definelabel MoverCombine_CodeCaveEnd,            0x00262C10
 
 ; -----------------------------------------------------------------------------
 ; HTTP, multipart, and HPP jobs

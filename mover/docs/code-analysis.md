@@ -15,7 +15,18 @@
 | `.bss` | Starts at `0x0032A000`, length `0x3A4A8` | Read/write, zero-initialized |
 | Thread stack | Length `0x40000` | ExHeader setting |
 
-The end of `.text` contains executable padding at `0x0028D1AC–0x0028E000`.
+The last non-zero image byte in `.text` is before `0x0028D1AC`. The ARM-aligned
+usable tail is `0x0028D1B0–0x0028E000`, or `0xE50` bytes. Ghidra's last
+referenced instruction/data location is `0x0028D188`, and its last function
+ends at `0x0028D18F`. The current offline payload ends at `0x0028DFB1`, leaving
+only `0x4F` bytes at the mapped text boundary.
+
+The zero-filled tails in `.rodata` (`0x002EBA58–0x002EC000`, `0x5A8` bytes)
+and `.data` (`0x003293FC–0x0032A000`, `0xC04` bytes) are non-executable and may
+still be referenced. Expanding only the ExHeader `.text` size would overlap
+the existing `.rodata` mapping. Expansion beyond `0x0028E000` therefore needs
+a relocated full code image and matching ExHeader segment addresses, not only
+a Luma `code.ips`.
 
 ## Main flow and function addresses
 

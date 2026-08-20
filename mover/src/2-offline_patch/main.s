@@ -8,9 +8,10 @@
 .definelabel OfflinePatch_CodeEnd,   0x0028E000
 .open "../../00040000000C9C00.code", "../../build/2-offline_patch/00040000000C9C00.code", 0x00100000
 
-// Replace only the online-facing state updates; the game-selection, conversion,
-// confirmation, cartridge-save and disconnect states remain native.
-// 仅替换面向在线服务的状态更新；游戏选择、转换、确认、卡带保存和断开状态保持原样。
+// Replace only online completion work. State creation and destruction remain
+// native so the stock waiting UI, spinner, sound, and cleanup keep one owner.
+// 仅替换联网完成工作。状态创建与析构保持原版，使等待界面、旋转动画、音效及清理
+// 始终由原状态机统一管理。
 .org MoverNetworkState_Update
     b OfflinePatch_NetworkUpdate
 // Keep the native message and state-timer initialization, force the available
