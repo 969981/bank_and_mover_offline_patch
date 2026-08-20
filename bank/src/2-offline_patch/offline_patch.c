@@ -131,12 +131,12 @@ static int leapYear(u32 year)
     return remainder100!=0u || remainder400==0u;
 }
 
-static int packFutureTicketDate(u32 packed[2])
+static int packCurrentDate(u32 packed[2])
 {
     static const u8 monthDays[12]={31,28,31,30,31,30,31,31,30,31,30,31};
     u64 remainder,cycles; u64 days; u32 year=1900,month=1,day,hour,minute,second,span;
-    u64 future=currentSystemTimeMs()+999ull*86400000ull;
-    days=divideU64(future,86400000ull,&remainder);
+    u64 current=currentSystemTimeMs();
+    days=divideU64(current,86400000ull,&remainder);
     /* Skip whole Gregorian 400-year cycles so malformed timestamps can never
        turn the year conversion into an unbounded loop. */
     /* 先跳过完整的公历 400 年周期，避免异常时间戳造成无界的逐年循环。 */
@@ -404,15 +404,9 @@ int OfflinePatch_PostSelectionConnectionUpdate(u8 *state)
     if (!STATE_DELAY_ELAPSED(state,2000u)) return 0;
     state[0x61]=0;
 
-    /* The native initializer starts the rotating wait UI and its looping sound.
-       Because the offline path does not create the native remote job, close the
-       wait UI explicitly before leaving this state. */
-    /* 原版初始化函数会启动旋转等待界面及其循环音效。离线路径不会创建原版
-       远端作业，因此必须在离开此状态前显式关闭等待界面。 */
-    {
-        void *manager=*(void **)(state+0x38);
-        if (manager) WAITING_UI_HIDE(manager);
-    }
+    /* Report completion through the stock state transition. Its native exit
+       path owns the wait UI, animation and sound cleanup. */
+    /* 通过原版状态转换报告完成；等待界面、动画及声音均由其原生退出路径负责清理。 */
     state[0x30]=4; return 1;
 }
 
@@ -488,13 +482,16 @@ int OfflinePatch_InitialRemoteRecordUpdate(u8 *state)
 }
 
 __attribute__((used,noinline,section(".text.offline")))
-int OfflinePatch_TicketUpdate(u8 *state)
+int OfflinePatch_OptionalRewardBypassUpdate(u8 *state)
 {
     u8 *shared=*(u8 **)(state+0x28); u32 *p=(u32 *)shared;
     if (!shared) { state[0x30]=3; return 1; }
-    /* Keep account-specific fields, but refresh the offline expiry from the console clock. */
-    /* 保留账户专有字段，但根据主机时钟刷新离线到期日期。 */
-    if (!packFutureTicketDate(&p[0x28/4])) { state[0x30]=3; return 1; }
+    /* This state normally obtains a trusted current timestamp and entitlement
+       values remotely. Supply the current console time for the stock local
+       mileage calculation while retaining a 999-day offline entitlement. */
+    /* 此状态原本会从远端取得可信当前时间和使用权数值。为原版本地里程计算提供
+       主机当前时间，同时保留 999 天离线使用权。 */
+    if (!packCurrentDate(&p[0x28/4])) { state[0x30]=3; return 1; }
     p[0x3C/4]=999; p[0x40/4]=999u*24u; shared[0x44]=1; shared[0x4F]=0;
     /* State 9 itself checks mode '5'. Existing mode '4' skips creation and
        reaches the feature menu; missing mode '5' runs native initialization. */

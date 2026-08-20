@@ -351641,9 +351641,9 @@ undefined8 FUN_002b0098(undefined4 param_1,undefined4 param_2)
 
 
 
-/* #6735 @ 002b0270 : AccountTicketState_Update */
+/* #6735 @ 002b0270 : OptionalRewardState_Update */
 
-undefined4 AccountTicketState_Update(int param_1)
+undefined4 OptionalRewardState_Update(int param_1)
 
 {
   longlong lVar1;

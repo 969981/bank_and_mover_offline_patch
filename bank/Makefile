@@ -1,4 +1,4 @@
-PATCHES := 1-download_patch 2-offline_patch 3-upload_patch
+PATCHES := 1-download_patch 2-offline_patch 3-combine_patch 3-upload_patch
 
 .PHONY: all clean $(PATCHES) $(addprefix clean-,$(PATCHES))
 
@@ -10,6 +10,9 @@ all: $(PATCHES)
 2-offline_patch:
 	$(MAKE) -C src/2-offline_patch all
 
+3-combine_patch:
+	$(MAKE) -C src/3-combine_patch all
+
 3-upload_patch:
 	$(MAKE) -C src/3-upload_patch all
 
@@ -20,6 +23,9 @@ clean-1-download_patch:
 
 clean-2-offline_patch:
 	$(MAKE) -C src/2-offline_patch clean
+
+clean-3-combine_patch:
+	$(MAKE) -C src/3-combine_patch clean
 
 clean-3-upload_patch:
 	$(MAKE) -C src/3-upload_patch clean

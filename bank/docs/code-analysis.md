@@ -15,7 +15,24 @@
 | `.bss` | Starts at `0x003AC000`, length `0x4EE38` | Read/write, zero-initialized |
 | Thread stack | Length `0x40000` | ExHeader setting |
 
-The end of `.text` contains executable padding at `0x00313910–0x00314000`; the following `.rodata` region is non-executable.
+The last non-zero image byte in `.text` is before `0x00313910`, leaving
+`0x6F0` bytes in the mapped executable page. Ghidra's last referenced
+instruction/data location is `0x003138EC`, and its last function ends at
+`0x003138F3`. The following `.rodata` region is non-executable.
+
+The image also has zero-filled tails in `.rodata` (`0x00369370–0x0036A000`,
+`0xC90` bytes) and `.data` (`0x003ABACC–0x003AC000`, `0x534` bytes), but they
+are not equivalent to executable free space. Ghidra records references as far
+as `0x00369374` and `0x003ABFE0`, including locations whose stored bytes are
+zero, so raw zero scanning alone is not a safe allocation rule.
+
+Increasing only the ExHeader `.text` size cannot extend executable code past
+`0x00314000`: `.rodata` begins at that same page boundary. A real expansion
+would require moving `.rodata` and `.data`, updating their ExHeader virtual
+addresses, and relocating every affected absolute reference. A Luma
+`code.ips` cannot express that complete image-layout change by itself. The
+current patch therefore uses existing executable padding and intentionally
+unreachable function bodies instead of claiming `.rodata` or `.bss` as code.
 
 ## Main flow and function addresses
 

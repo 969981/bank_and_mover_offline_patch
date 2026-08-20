@@ -85,8 +85,10 @@ replaced with a checked direct write to `bankdata.bin`. A failed first write
 removes its partial file. The normal save path continues to use `.tmp` and
 maintain `.bak`.
 
-The ticket expiry exists in runtime state. Existing identity fields and the
-creation date stored in `bankdata.bin` are not rewritten by the ticket patch.
+The console clock supplies the current-time field used by the native local
+mileage calculation. The 999-day offline entitlement is stored separately and
+is never used as mileage time. Existing identity fields and the creation date
+stored in `bankdata.bin` are not rewritten by this patch.
 
 ## Loading and using the Bank
 

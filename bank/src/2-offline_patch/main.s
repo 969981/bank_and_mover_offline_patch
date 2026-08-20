@@ -6,7 +6,7 @@
 
 .definelabel OfflinePatch_CodeStart, 0x00313A40
 .definelabel OfflinePatch_CodeEnd,   0x00314000
-.definelabel OfflinePatch_PayloadStart, AccountTicketState_Update + 4
+.definelabel OfflinePatch_PayloadStart, OptionalRewardState_Update + 4
 .definelabel OfflinePatch_PayloadEndLimit, 0x002B14E0
 
 .open "../../00040000000C9B00.code", "../../build/2-offline_patch/00040000000C9B00.code", 0x00100000
@@ -26,8 +26,8 @@
     b NetworkConnectionState_Initialize + 0x5C
 .org InitialRemoteRecordState_Update
     b OfflinePatch_InitialRemoteRecordUpdate
-.org AccountTicketState_Update
-    b OfflinePatch_TicketUpdate
+.org OptionalRewardState_Update
+    b OfflinePatch_OptionalRewardBypassUpdate
 .org BankDataSyncState_Update
     b OfflinePatch_BankDataSyncEntry
 
@@ -73,15 +73,26 @@
 .org BankCreateState_Update + 0x2FC
     movne r0,#8
 
-// Skip reward-server states after a normal Bank load. HOME remains unavailable
-// and is redirected to language selection.
-// 普通 Bank 载入后跳过奖励服务器状态；HOME 不可用并重定向到语言选择。
-.org BankFlow_SelectNextState + 0x248
-    moveq r0,#25
+// Keep the native state 12/13 local mileage calculation and receipt flow after
+// loading Bank data. Remote campaign and online-gift checks remain bypassed
+// separately in state 15. HOME remains unavailable and is redirected to
+// language selection.
+// Bank 数据载入后保留原版 state 12/13 本地里程计算与领取流程。远端活动和联网
+// 礼物检查仍由 state 15 的独立钩子禁用。HOME 不可用并重定向到语言选择。
 .org BankFlow_SelectNextState + 0x170
     beq OfflinePatch_RedirectHomeToLanguage
+.org BankFlow_SelectNextState + 0x248
+    moveq r0,#12
 .org BankFlow_SelectNextState + 0x34C
     beq BankFlow_SelectNextState + 0x3B4
+
+// Preserve the native first-present flag. A clear flag follows the stock
+// one-time 100-mile gift path. A set flag emulates the stock "no online gift"
+// callback result and resumes directly at local-mileage substate 27.
+// 保留原版首次奖励标志。标志为零时进入一次性的 100 里程赠送流程；标志已设置时
+// 模拟原版“没有联网礼物”的回调结果，直接从本地里程子状态 27 继续。
+.org RewardReceive_FirstPresentBranch
+    b OfflinePatch_FirstPresentDispatch
 
 // State 21 is the stock return path after changing language. Its disconnect
 // work remains native, but a blank appended message prevents the newly selected
@@ -137,6 +148,19 @@ OfflinePatch_SelectDisconnectMessage:
     moveq r1,#0x0D
     movne r1,#0x60
     bx lr
+
+OfflinePatch_FirstPresentDispatch:
+    cmp r0,#0
+    beq RewardReceive_FirstPresentPath
+    // Mark both online-gift passes as exhausted for this state instance. This
+    // preserves the persistent update-gift flag for later official use.
+    // 将当前状态实例的两轮联网礼物查询标记为已完成，同时保留持久化的
+    // 更新礼物标志，供日后在原版联网流程中使用。
+    mov r0,#1
+    str r0,[r4,#0x4C]
+    mov r0,#0x1B
+    str r0,[r4,#0x10]
+    b RewardReceive_UpdateReturnPending
 
 // State 21 is the language-return variant. Copy the pending language fields
 // into the stock persistent settings object before starting its native save

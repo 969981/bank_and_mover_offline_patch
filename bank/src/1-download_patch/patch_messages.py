@@ -172,6 +172,7 @@ def patch_message_file(
     data: bytes,
     replacements: dict[int, str],
     appended_lines: tuple[tuple[str, int], ...] = (),
+    appended_value_lines: tuple[tuple[list[int], int], ...] = (),
 ) -> bytes:
     if len(data) < 0x18 or _u16(data, 0) != 1 or _u32(data, 12) != 0x10:
         raise ValueError("unsupported message-file header")
@@ -196,6 +197,7 @@ def patch_message_file(
         line_key = (line_key + 0x2983) & 0xFFFF
 
     lines.extend((_text_values(text), flags) for text, flags in appended_lines)
+    lines.extend((list(values), flags) for values, flags in appended_value_lines)
     line_count = len(lines)
     section = bytearray(4 + line_count * 8)
     line_key = 0x7C89
@@ -213,6 +215,25 @@ def patch_message_file(
     struct.pack_into("<H", header, 2, line_count)
     struct.pack_into("<I", header, 4, len(section))
     return bytes(header + section)
+
+
+def read_message_line_values(data: bytes, index: int) -> list[int]:
+    """Return one decrypted message entry without treating embedded zeroes as terminators.
+
+    返回一条解密消息，并且不把嵌入的零值控制参数当作终止符。
+    """
+    line_count = _u16(data, 2)
+    if index < 0 or index >= line_count:
+        raise IndexError(index)
+    section_offset = _u32(data, 12)
+    entry_offset = section_offset + 4 + index * 8
+    text_offset, length, _flags = struct.unpack_from("<IHH", data, entry_offset)
+    start = section_offset + text_offset
+    encrypted = data[start : start + length * 2]
+    if len(encrypted) != length * 2:
+        raise ValueError(f"message line {index} extends past the file")
+    line_key = (0x7C89 + index * 0x2983) & 0xFFFF
+    return _decrypt_line(encrypted, line_key)
 
 
 def read_message_lines(data: bytes) -> list[str]:
