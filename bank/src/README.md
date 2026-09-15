@@ -1,5 +1,10 @@
 # Combined offline and download patch
 
+See [`../docs/code-analysis.md`](../docs/code-analysis.md) for the stock
+program's memory map, state table, network paths, BankObject, and bankdata
+layout. This document covers only the maintained patch design, implementation,
+and independent build procedure.
+
 This is the maintained Pokemon Bank v1.5 patch for base title
 `00040000000C9B00`. It incorporates the useful behavior and safety checks of
 the former standalone download and offline patches into one runtime-selectable
@@ -273,19 +278,64 @@ LayeredFS redirection payload from the title's original `.text` end. Patch code
 starts after that reserved area and remains below the executable limit at
 `0x00314000`.
 
-## Build and installation
+## Independent build and installation
 
-Set `DEVKITARM`, then place the user-dumped inputs at
-`bank/rom/exefs/00040000000C9B00.dec.code` and `bank/rom/romfs/`. Only
-`bank/rom/.gitkeep` is tracked; the code image and RomFS are deliberately
-ignored and must be extracted from the user's own copy. `ROMFS_SOURCE` may
-still be overridden explicitly. Python 3 is required for the message rebuild.
+The Bank subproject does not depend on Mover source or build artifacts. It can
+compile the payload, create the IPS, rebuild all ten language archives, and run
+static verification independently.
+
+Install GNU Make, a POSIX-compatible shell, Python 3, and devkitARM, then set
+the `DEVKITARM` environment variable. Windows builds of armips and Floating
+IPS are bundled. Other platforms may set `ARMIPS` and `IPS_TOOL` to locally
+downloaded or compiled executables.
+
+Dump the inputs from the user's own Bank base title `00040000000C9B00`:
+
+1. In GodMode9 `Title manager`, select the Bank base title and open
+   `Open title folder`.
+2. Select the executable `.app`, then run `NCCH image options...` →
+   `Extract .code`.
+3. Select the same `.app`, run `NCCH image options...` →
+   `Mount image to drive`, and copy the complete mounted `romfs` directory.
+4. Place the inputs in this layout:
+
+```text
+bank/rom/
+├── exefs/
+│   └── 00040000000C9B00.dec.code
+└── romfs/
+    └── ...
+```
+
+The base code must be `2,801,664` bytes with SHA-1
+`5AB630856835DCF2DBDF9A62244DD19E46AE1C7C`. The build checks the input again.
+Do not commit or redistribute the code image or RomFS. `ROMFS_SOURCE` may
+override the default RomFS path when required.
+
+Build Bank independently from the repository root:
 
 ```sh
+make -C bank clean
+make -C bank
+```
+
+The subproject can also be invoked directly:
+
+```sh
+make -C bank/src clean
 make -C bank/src all
 ```
 
-The complete package is generated at:
+Example for a non-Windows host:
+
+```sh
+make -C bank ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
+```
+
+The build compiles `patch.c`, emits a disassembly for inspection, imports the
+object and patches the base image with armips, creates `code.ips` with Floating
+IPS, rebuilds the ten-language RomFS, and runs static verification. The complete
+output is:
 
 ```text
 bank/release/00040000000C9B00/
@@ -293,15 +343,11 @@ bank/release/00040000000C9B00/
 └── romfs/
 ```
 
-Copy the generated `00040000000C9B00` directory to `SD:/luma/titles/` and
-enable Luma game patching. Test with a backed-up SD card and a disposable game
-save before using the patch on hardware.
-
-The verifier rejects an unsupported base image and checks that the imported
-local implementation fits in its verified executable region, each ARM hook and
-overwritten instruction is correct, the IPS reproduces the patched image
-byte-for-byte, and every generated message archive retains required stock
-entries.
+The verifier checks the base hash, executable payload ranges, every ARM hook,
+overwritten stock instructions, mode dispatch, byte-for-byte IPS reconstruction,
+and all localized messages. Copy `00040000000C9B00` to `SD:/luma/titles/` and
+enable Luma game patching. Back up the SD card and game saves before real-console
+use.
 
 ## External open-source references
 

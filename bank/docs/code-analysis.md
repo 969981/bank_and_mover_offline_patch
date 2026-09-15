@@ -1,5 +1,10 @@
 # Pokemon Bank Code Analysis
 
+This document records static-analysis conclusions about the supported stock
+binary only; it does not describe patch design or build instructions. See
+[`../src/README.md`](../src/README.md) for the maintained implementation,
+transaction rules, and independent build procedure.
+
 ## Target and memory layout
 
 - Title ID: `00040000000C9B00`

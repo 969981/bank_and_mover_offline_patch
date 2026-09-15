@@ -1,5 +1,9 @@
 # 离线与下载合并补丁
 
+原版程序的内存分布、状态表、网络路径、BankObject 与 bankdata 结构见
+[`../docs/code-analysis.zh-cn.md`](../docs/code-analysis.zh-cn.md)。本文只说明当前补丁的设计、
+实现与独立构建方法。
+
 这是 Pokemon Bank v1.5 本体 `00040000000C9B00` 当前维护的补丁。它把旧版独立
 下载补丁和独立离线补丁中仍然有效的功能与安全检查整合到一个可在运行时选择模式的
 工程中。它不是把两个 IPS 直接拼接起来，而是在每个共用的联网、数据、文本和保存
@@ -242,18 +246,57 @@
 安装 LayeredFS 重定向载荷。补丁代码从该保留区之后开始，并保持在可执行区末端
 `0x00314000` 以内。
 
-## 编译与安装
+## 独立编译与安装
 
-设置 `DEVKITARM`，并把用户自行提取的输入放到
-`bank/rom/exefs/00040000000C9B00.dec.code` 与 `bank/rom/romfs/`。工程只跟踪
-`bank/rom/.gitkeep`；代码镜像与 RomFS 均被 Git 忽略，必须从用户自己的软件中提取。
-仍可显式覆盖 `ROMFS_SOURCE`。文本重建需要 Python 3。
+Bank 子项目不依赖 Mover 的源码或构建产物，可以单独完成代码编译、IPS 生成、十套语言
+文本重建和静态验证。
+
+需要准备 GNU Make、兼容 POSIX 的 shell、Python 3 和 devkitARM，并设置 `DEVKITARM`
+环境变量。仓库自带 Windows 版 armips 与 Floating IPS；其他平台可通过 `ARMIPS` 和
+`IPS_TOOL` 指定自行下载或编译的程序。
+
+从用户自己的 Bank 本体 `00040000000C9B00` 提取输入：
+
+1. 在 GodMode9 的 `Title manager` 中选择 Bank 本体并进入 `Open title folder`。
+2. 选择可执行 `.app`，依次执行 `NCCH image options...` → `Extract .code`。
+3. 再次选择同一 `.app`，执行 `NCCH image options...` → `Mount image to drive`，复制挂载
+   分区中的完整 `romfs` 目录。
+4. 按以下结构放入工程：
+
+```text
+bank/rom/
+├── exefs/
+│   └── 00040000000C9B00.dec.code
+└── romfs/
+    └── ...
+```
+
+基底代码必须为 `2,801,664` 字节，SHA-1 必须为
+`5AB630856835DCF2DBDF9A62244DD19E46AE1C7C`。构建脚本会再次检查输入；代码镜像和
+RomFS 不应提交或传播。需要使用其他 RomFS 路径时可显式覆盖 `ROMFS_SOURCE`。
+
+从仓库根目录独立构建 Bank：
 
 ```sh
+make -C bank clean
+make -C bank
+```
+
+也可以直接调用子项目：
+
+```sh
+make -C bank/src clean
 make -C bank/src all
 ```
 
-完整发行包生成于：
+非 Windows 平台示例：
+
+```sh
+make -C bank ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
+```
+
+构建顺序为：编译 `patch.c` → 输出反汇编供检查 → armips 导入对象并修改基底镜像 →
+Floating IPS 对比生成 `code.ips` → 重建十套语言 RomFS → 执行静态验证。完整输出为：
 
 ```text
 bank/release/00040000000C9B00/
@@ -261,12 +304,9 @@ bank/release/00040000000C9B00/
 └── romfs/
 ```
 
-把生成的 `00040000000C9B00` 目录复制到 `SD:/luma/titles/`，并启用 Luma 游戏补丁。
-上实机前请备份 SD 卡，并先用可丢弃的游戏存档测试。
-
-校验器会拒绝不受支持的基底镜像，并检查本地实现是否位于已验证的可执行范围内、每个
-ARM 钩子与被覆盖指令是否正确、IPS 是否逐字节还原构建镜像，以及生成的每套文本档案
-是否保留所需原版条目。
+校验器会检查基底哈希、载荷可执行范围、每个 ARM 钩子、被覆盖原指令、模式分派、IPS
+逐字节还原结果和所有本地化文本。把生成的 `00040000000C9B00` 复制到
+`SD:/luma/titles/`，启用 Luma 游戏补丁。实机使用前请备份 SD 卡和游戏存档。
 
 ## 外部开源参考
 

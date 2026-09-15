@@ -1,5 +1,10 @@
 # Combined original and offline patch
 
+See [`../docs/code-analysis.md`](../docs/code-analysis.md) for the stock
+program's memory map, network path, BankObject, and Transport Box layout. This
+document covers only the maintained patch design, implementation, and
+independent build procedure.
+
 This is the maintained Poke Mover v5.5.0 patch for base title
 `00040000000C9C00`. It combines the verified standalone offline behavior with
 an exact runtime path back to the original application.
@@ -181,19 +186,65 @@ state object; the native state exit path performs cleanup.
 | `verify_patch.py` | Verifies the base hash, code regions, hooks, native replay, IPS reconstruction, and resources |
 | `Makefile` | Compiles the shared offline implementation, injects code, creates IPS, rebuilds messages, and writes the release tree |
 
-## Build and installation
+## Independent build and installation
 
-Set `DEVKITARM`, then place the user-dumped inputs at
-`mover/rom/exefs/00040000000C9C00.dec.code` and `mover/rom/romfs/`. Only
-`mover/rom/.gitkeep` is tracked; the code image and RomFS are deliberately
-ignored and must be extracted from the user's own copy. `ROMFS_SOURCE` may
-still be overridden explicitly. Python 3 is required for the message rebuild.
+The Mover subproject does not depend on Bank source or build artifacts. It can
+compile the payload, create the IPS, rebuild all ten language archives, and run
+static verification independently. At runtime, Offline Mode still requires a
+`sd:/3ds/Bank/bankdata.bin` previously downloaded or initialized by Bank.
+
+Install GNU Make, a POSIX-compatible shell, Python 3, and devkitARM, then set
+the `DEVKITARM` environment variable. Windows builds of armips and Floating
+IPS are bundled. Other platforms may set `ARMIPS` and `IPS_TOOL` to locally
+downloaded or compiled executables.
+
+Dump the inputs from the user's own Mover base title `00040000000C9C00`:
+
+1. In GodMode9 `Title manager`, select the Mover base title and open
+   `Open title folder`.
+2. Select the executable `.app`, then run `NCCH image options...` →
+   `Extract .code`.
+3. Select the same `.app`, run `NCCH image options...` →
+   `Mount image to drive`, and copy the complete mounted `romfs` directory.
+4. Place the inputs in this layout:
+
+```text
+mover/rom/
+├── exefs/
+│   └── 00040000000C9C00.dec.code
+└── romfs/
+    └── ...
+```
+
+The base code must be `2,269,184` bytes with SHA-1
+`583859C1E874D11650EFBDDE51F470ECF96900C4`. The build checks the input again.
+Do not commit or redistribute the code image or RomFS. `ROMFS_SOURCE` may
+override the default RomFS path when required.
+
+Build Mover independently from the repository root:
 
 ```sh
+make -C mover clean
+make -C mover
+```
+
+The subproject can also be invoked directly:
+
+```sh
+make -C mover/src clean
 make -C mover/src all
 ```
 
-The complete package is generated at:
+Example for a non-Windows host:
+
+```sh
+make -C mover ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
+```
+
+The build compiles `patch.c`, emits a disassembly for inspection, imports the
+object and patches the base image with armips, creates `code.ips` with Floating
+IPS, rebuilds the ten-language RomFS, and runs static verification. The complete
+output is:
 
 ```text
 mover/release/00040000000C9C00/
@@ -201,10 +252,11 @@ mover/release/00040000000C9C00/
 └── romfs/
 ```
 
-Copy the generated `00040000000C9C00` directory to `SD:/luma/titles/` and
-enable Luma game patching. The verifier checks the supported base-code hash, executable-region
-limits, each hook and original-mode continuation, IPS byte-for-byte
-reconstruction, and preservation of every original localized message.
+The verifier checks the base hash, executable payload ranges, every ARM hook,
+overwritten stock instructions, Offline/Original mode dispatch and continuation
+sites, byte-for-byte IPS reconstruction, and all stock and added localized
+messages. Copy `00040000000C9C00` to `SD:/luma/titles/` and enable Luma game
+patching. Back up the SD card and source-game saves before real-console use.
 
 ## External open-source references
 

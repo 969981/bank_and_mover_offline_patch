@@ -1,5 +1,9 @@
 # 原版与离线合并补丁
 
+原版程序的内存分布、网络路径、BankObject 与传送盒结构见
+[`../docs/code-analysis.zh-cn.md`](../docs/code-analysis.zh-cn.md)。本文只说明当前补丁的设计、
+实现与独立构建方法。
+
 这是 Poke Mover v5.5.0 本体 `00040000000C9C00` 当前维护的补丁。它把已经验证的
 独立离线功能与精确返回原版程序的运行时路线合并在一起。
 
@@ -160,18 +164,58 @@ sd:/3ds/Bank/bankdata.bin
 | `verify_patch.py` | 验证基底哈希、代码区域、钩子、原版重放、IPS 还原与资源 |
 | `Makefile` | 编译共用离线实现、注入代码、创建 IPS、重建文本并写出发行目录 |
 
-## 编译与安装
+## 独立编译与安装
 
-设置 `DEVKITARM`，并把用户自行提取的输入放到
-`mover/rom/exefs/00040000000C9C00.dec.code` 与 `mover/rom/romfs/`。工程只跟踪
-`mover/rom/.gitkeep`；代码镜像与 RomFS 均被 Git 忽略，必须从用户自己的软件中提取。
-仍可显式覆盖 `ROMFS_SOURCE`。文本重建需要 Python 3。
+Mover 子项目不依赖 Bank 的源码或构建产物，可以单独完成代码编译、IPS 生成、十套语言
+文本重建和静态验证。运行时的离线模式仍要求 SD 卡上已有由 Bank 下载或初始化的
+`sd:/3ds/Bank/bankdata.bin`。
+
+需要准备 GNU Make、兼容 POSIX 的 shell、Python 3 和 devkitARM，并设置 `DEVKITARM`
+环境变量。仓库自带 Windows 版 armips 与 Floating IPS；其他平台可通过 `ARMIPS` 和
+`IPS_TOOL` 指定自行下载或编译的程序。
+
+从用户自己的 Mover 本体 `00040000000C9C00` 提取输入：
+
+1. 在 GodMode9 的 `Title manager` 中选择 Mover 本体并进入 `Open title folder`。
+2. 选择可执行 `.app`，依次执行 `NCCH image options...` → `Extract .code`。
+3. 再次选择同一 `.app`，执行 `NCCH image options...` → `Mount image to drive`，复制挂载
+   分区中的完整 `romfs` 目录。
+4. 按以下结构放入工程：
+
+```text
+mover/rom/
+├── exefs/
+│   └── 00040000000C9C00.dec.code
+└── romfs/
+    └── ...
+```
+
+基底代码必须为 `2,269,184` 字节，SHA-1 必须为
+`583859C1E874D11650EFBDDE51F470ECF96900C4`。构建脚本会再次检查输入；代码镜像和
+RomFS 不应提交或传播。需要使用其他 RomFS 路径时可显式覆盖 `ROMFS_SOURCE`。
+
+从仓库根目录独立构建 Mover：
 
 ```sh
+make -C mover clean
+make -C mover
+```
+
+也可以直接调用子项目：
+
+```sh
+make -C mover/src clean
 make -C mover/src all
 ```
 
-完整发行包生成于：
+非 Windows 平台示例：
+
+```sh
+make -C mover ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
+```
+
+构建顺序为：编译 `patch.c` → 输出反汇编供检查 → armips 导入对象并修改基底镜像 →
+Floating IPS 对比生成 `code.ips` → 重建十套语言 RomFS → 执行静态验证。完整输出为：
 
 ```text
 mover/release/00040000000C9C00/
@@ -179,9 +223,10 @@ mover/release/00040000000C9C00/
 └── romfs/
 ```
 
-把生成的 `00040000000C9C00` 目录复制到 `SD:/luma/titles/`，并启用 Luma 游戏补丁。
-校验器会检查受支持的基底代码哈希、可执行区边界、每个钩子与原版模式续接位置、IPS 逐字节还原结果，以及
-全部原版本地化文本是否保持不变。
+校验器会检查基底哈希、载荷可执行范围、每个 ARM 钩子、被覆盖原指令、离线／原版模式
+分派和续接点、IPS 逐字节还原结果，以及所有原版和新增本地化文本。把生成的
+`00040000000C9C00` 复制到 `SD:/luma/titles/`，启用 Luma 游戏补丁。实机使用前请备份
+SD 卡和来源游戏存档。
 
 ## 外部开源参考
 
