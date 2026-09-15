@@ -4,7 +4,7 @@
 
 ## Current status
 
-The download, offline, and combined patches are implemented for both Pokemon Bank and Poke Mover. All local Bank data uses `/3ds/Bank/bankdata.bin`.
+One maintained combined patch is provided for each application. All local Bank data uses `/3ds/Bank/bankdata.bin`.
 
 - Pokemon Bank's combined patch switches between download and offline modes.
 - Poke Mover's combined patch switches between original and offline modes.
@@ -89,16 +89,16 @@ make -C bank ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 make -C mover ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 ```
 
-The release patches are written below each application's `release` directory:
+The release title directories are written directly below each application's `release` directory:
 
 ```text
-bank/release/1-download_patch/luma/titles/00040000000C9B00/code.ips
-bank/release/2-offline_patch/luma/titles/00040000000C9B00/code.ips
-bank/release/3-combine_patch/luma/titles/00040000000C9B00/code.ips
+bank/release/00040000000C9B00/
+├── code.ips
+└── romfs/
 
-mover/release/1-download_patch/luma/titles/00040000000C9C00/code.ips
-mover/release/2-offline_patch/luma/titles/00040000000C9C00/code.ips
-mover/release/3-combine_patch/luma/titles/00040000000C9C00/code.ips
+mover/release/00040000000C9C00/
+├── code.ips
+└── romfs/
 ```
 
-To install a release, merge its `luma` directory into the root of the 3DS SD card and enable `Enable game patching` in the Luma3DS configuration. Luma3DS loads title IPS patches from `/luma/titles/<Title ID>/code.ips`.
+To install a release, copy its complete Title ID directory into `SD:/luma/titles/` and enable `Enable game patching` in the Luma3DS configuration. Luma3DS loads title IPS patches from `/luma/titles/<Title ID>/code.ips`.

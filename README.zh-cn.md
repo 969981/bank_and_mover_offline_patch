@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-Pokemon Bank 和 Poke Mover 的下载补丁、离线补丁与合并补丁均已实现。本地银行数据统一使用 `/3ds/Bank/bankdata.bin`。
+Pokemon Bank 和 Poke Mover 各自只保留一个当前维护的合并补丁。本地银行数据统一使用 `/3ds/Bank/bankdata.bin`。
 
 - Pokemon Bank 合并补丁可在下载模式与离线模式之间切换。
 - Poke Mover 合并补丁可在原版模式与离线模式之间切换。
@@ -89,16 +89,16 @@ make -C bank ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 make -C mover ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 ```
 
-发行补丁将生成到各软件的 `release` 目录：
+发行用 Title ID 目录将直接生成到各软件的 `release` 目录：
 
 ```text
-bank/release/1-download_patch/luma/titles/00040000000C9B00/code.ips
-bank/release/2-offline_patch/luma/titles/00040000000C9B00/code.ips
-bank/release/3-combine_patch/luma/titles/00040000000C9B00/code.ips
+bank/release/00040000000C9B00/
+├── code.ips
+└── romfs/
 
-mover/release/1-download_patch/luma/titles/00040000000C9C00/code.ips
-mover/release/2-offline_patch/luma/titles/00040000000C9C00/code.ips
-mover/release/3-combine_patch/luma/titles/00040000000C9C00/code.ips
+mover/release/00040000000C9C00/
+├── code.ips
+└── romfs/
 ```
 
-安装时，将对应发行目录中的 `luma` 文件夹合并到 3DS SD 卡根目录，并在 Luma3DS 配置中启用 `Enable game patching`。Luma3DS 会从 `/luma/titles/<Title ID>/code.ips` 载入 IPS 补丁。
+安装时，把对应的完整 Title ID 目录复制到 `SD:/luma/titles/`，并在 Luma3DS 配置中启用 `Enable game patching`。Luma3DS 会从 `/luma/titles/<Title ID>/code.ips` 载入 IPS 补丁。
