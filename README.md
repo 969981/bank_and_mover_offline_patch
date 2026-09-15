@@ -57,6 +57,8 @@ If the official server already contains your Bank, first enter Download Mode, ch
 
 Download Mode overwrites the current local Bank, so back it up first. If no server copy needs to be preserved, Offline Mode may be used directly; when neither a valid primary nor backup exists, the patch invokes the stock first-use initializer to create a local Bank.
 
+> **Privacy:** `bankdata.bin` downloaded in Download Mode may contain private account-related identifiers, player and Trainer information, and timestamps. Do not upload it publicly or share it casually.
+
 ### Poke Mover
 
 The title screen defaults to **Offline Mode**. Press **R** to select **Original Mode**.
@@ -65,6 +67,15 @@ The title screen defaults to **Offline Mode**. Press **R** to select **Original 
 - A successful offline transfer writes Pokemon into the Transport Box of the same local Bank; retrieve them later with Bank in Offline Mode.
 - Original Mode follows the official network path and does not read, write, rename, or remove files under `SD:/3ds/Bank/`.
 - If the local file is invalid or its Transport Box is occupied, Mover preserves the file and follows the corresponding error path.
+
+### bankdata viewer
+
+The included [bankdata viewer](ViewerForBankdata/README.md) can be used to inspect a local `bankdata.bin`. Run it with Python 3, then select the file to open:
+
+```powershell
+cd ViewerForBankdata
+python .\gui\bank_viewer.py
+```
 
 ## Data safety and limitations
 
