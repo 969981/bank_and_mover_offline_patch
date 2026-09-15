@@ -133,11 +133,11 @@ make -C mover ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 输出位于：
 
 ```text
-bank/release/00040000000C9B00/
+release/00040000000C9B00/
 ├── code.ips
 └── romfs/
 
-mover/release/00040000000C9C00/
+release/00040000000C9C00/
 ├── code.ips
 └── romfs/
 ```

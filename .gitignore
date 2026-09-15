@@ -1,10 +1,8 @@
 # Generated build and release trees
 /bank/build/
 /mover/build/
-/bank/release/*
-!/bank/release/.gitkeep
-/mover/release/*
-!/mover/release/.gitkeep
+/release/*
+!/release/.gitkeep
 
 # Generated compiler and assembler output outside build trees
 *.o

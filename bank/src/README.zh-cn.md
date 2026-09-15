@@ -299,7 +299,7 @@ make -C bank ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 Floating IPS 对比生成 `code.ips` → 重建十套语言 RomFS → 执行静态验证。完整输出为：
 
 ```text
-bank/release/00040000000C9B00/
+release/00040000000C9B00/
 ├── code.ips
 └── romfs/
 ```

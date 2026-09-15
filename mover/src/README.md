@@ -247,7 +247,7 @@ IPS, rebuilds the ten-language RomFS, and runs static verification. The complete
 output is:
 
 ```text
-mover/release/00040000000C9C00/
+release/00040000000C9C00/
 ├── code.ips
 └── romfs/
 ```

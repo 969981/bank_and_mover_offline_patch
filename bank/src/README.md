@@ -338,7 +338,7 @@ IPS, rebuilds the ten-language RomFS, and runs static verification. The complete
 output is:
 
 ```text
-bank/release/00040000000C9B00/
+release/00040000000C9B00/
 ├── code.ips
 └── romfs/
 ```
