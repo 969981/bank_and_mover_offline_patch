@@ -13,7 +13,7 @@ The upload patch has been permanently discontinued and will not be implemented o
 
 Players installing a release do not need an original `.code` file. They only need the generated `code.ips` under the appropriate `release` directory. The original `.code` files are required only when rebuilding the patches.
 
-## Obtaining the original code
+## Obtaining the original code and RomFS
 
 Extract the code only from titles installed on your own 3DS. Do not redistribute the extracted files.
 
@@ -27,18 +27,42 @@ Extract the code only from titles installed on your own 3DS. Do not redistribute
    | Poke Mover | `00040000000C9C00` |
 
 4. Select `Open title folder`.
-5. Select the executable `.app`, press `A`, and choose `NCCH image options...` followed by `Extract .code`.
-6. Copy the resulting decompressed `.dec.code` file from `SD:/gm9/out/` to the computer.
-7. Rename and place each file as shown below.
+5. Select the executable `.app`, press `A`, and choose `NCCH image options...` followed by `Extract .code`. GodMode9 writes `<Title ID>.dec.code` to `SD:/gm9/out/`.
+6. Select the same `.app` again, press `A`, and choose `NCCH image options...` followed by `Mount image to drive`. In the mounted `G:` drive, highlight the `romfs` directory and press `Y` to copy it. Press `B` to return to the drive list, open `[0:] SDCARD` → `gm9` → `out`, press `Y` to paste, and press `A` to confirm. The complete directory is saved as `SD:/gm9/out/romfs/`.
+7. Press `HOME` and select `Poweroff system`. Connect the SD card to the computer, then copy the files to these exact locations:
+
+   - Bank: copy `SD:/gm9/out/00040000000C9B00.dec.code` to `bank/rom/exefs/00040000000C9B00.dec.code`, and copy `SD:/gm9/out/romfs/` to `bank/rom/romfs/`.
+   - Mover: copy `SD:/gm9/out/00040000000C9C00.dec.code` to `mover/rom/exefs/00040000000C9C00.dec.code`, and copy `SD:/gm9/out/romfs/` to `mover/rom/romfs/`.
+
+   Process one application at a time. After copying it to the computer, move `SD:/gm9/out/romfs/` out of the output directory before extracting the other application, so the identically named directories cannot overwrite each other.
 
 ## Required files and SHA-1
 
 | Application | Project path | Size | SHA-1 |
 |---|---|---:|---|
-| Pokemon Bank | `bank/00040000000C9B00.code` | 2,801,664 bytes | `5AB630856835DCF2DBDF9A62244DD19E46AE1C7C` |
-| Poke Mover | `mover/00040000000C9C00.code` | 2,269,184 bytes | `583859C1E874D11650EFBDDE51F470ECF96900C4` |
+| Pokemon Bank | `bank/rom/exefs/00040000000C9B00.dec.code` | 2,801,664 bytes | `5AB630856835DCF2DBDF9A62244DD19E46AE1C7C` |
+| Poke Mover | `mover/rom/exefs/00040000000C9C00.dec.code` | 2,269,184 bytes | `583859C1E874D11650EFBDDE51F470ECF96900C4` |
 
-A different size or SHA-1 means the extracted code is not the version targeted by this project. Do not build an IPS against a mismatched file.
+A different size or SHA-1 means the extracted code is not the version targeted by this project or was not extracted and decompressed correctly. Do not build an IPS against a mismatched file. RomFS resources remain in their native per-file formats; copy the mounted `romfs` tree as-is rather than attempting another whole-tree decompression.
+
+The complete local input layout is:
+
+```text
+bank/rom/
+├── exefs/
+│   └── 00040000000C9B00.dec.code
+└── romfs/
+    └── ...
+
+mover/rom/
+├── exefs/
+│   └── 00040000000C9C00.dec.code
+└── romfs/
+    └── ...
+```
+
+Only each empty `rom/.gitkeep` placeholder is tracked. Extracted `.code` and
+RomFS data are ignored by Git and must not be committed or redistributed.
 
 ## Building
 

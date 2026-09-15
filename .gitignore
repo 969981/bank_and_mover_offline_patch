@@ -15,6 +15,10 @@ armips-symbols.txt
 /mover/*.code
 /bank/romfs/
 /mover/romfs/
+/bank/rom/*
+!/bank/rom/.gitkeep
+/mover/rom/*
+!/mover/rom/.gitkeep
 /bank/bankdata.bin
 /mover/bankdata.bin
 *.3ds

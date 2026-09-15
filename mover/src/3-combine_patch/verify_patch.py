@@ -183,21 +183,17 @@ def main() -> None:
             raise ValueError(f"incorrect hook at {address:08X}")
 
     messages = load_helper(Path(__file__).with_name("patch_messages.py"))
-    archive_helper = messages.load_module(
-        "verify_message_archive",
-        Path(__file__).parents[3] / "bank" / "src" / "1-download_patch" / "patch_messages.py",
-    )
     for archive in messages.ARCHIVES:
-        source_entries = archive_helper.read_garc(
+        source_entries = messages.message_codec.read_garc(
             (args.source_romfs / "a" / Path(archive)).read_bytes()
         )[2]
-        output_entries = archive_helper.read_garc(
+        output_entries = messages.message_codec.read_garc(
             (args.output_romfs / "a" / Path(archive)).read_bytes()
         )[2]
-        source_lines = archive_helper.read_message_lines(
+        source_lines = messages.message_codec.read_message_lines(
             source_entries[messages.MESSAGE_FILE_INDEX].files[0]
         )
-        output_lines = archive_helper.read_message_lines(
+        output_lines = messages.message_codec.read_message_lines(
             output_entries[messages.MESSAGE_FILE_INDEX].files[0]
         )
         if output_lines[:len(source_lines)] != source_lines:

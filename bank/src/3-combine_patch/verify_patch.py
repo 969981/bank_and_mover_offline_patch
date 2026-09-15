@@ -614,17 +614,17 @@ def verify_code(base: Path, patched: Path, symbols_path: Path, ips: Path) -> Non
 
 def verify_messages(source_romfs: Path, output_romfs: Path) -> None:
     module = load_module("combine_patch_messages_verify", Path(__file__).with_name("patch_messages.py"))
-    for archive in module.OFFLINE.ARCHIVES:
+    for archive in module.ARCHIVES:
         source = source_romfs / "a" / Path(archive)
         output = output_romfs / "a" / Path(archive)
         if not output.is_file():
             raise ValueError(f"missing LayeredFS message archive: {archive}")
-        _, _, source_entries = module.HELPER.read_garc(source.read_bytes())
-        _, _, output_entries = module.HELPER.read_garc(output.read_bytes())
-        source_message_file = source_entries[module.OFFLINE.MESSAGE_FILE_INDEX].files[0]
-        output_message_file = output_entries[module.OFFLINE.MESSAGE_FILE_INDEX].files[0]
-        source_lines = module.HELPER.read_message_lines(source_message_file)
-        output_lines = module.HELPER.read_message_lines(output_message_file)
+        _, _, source_entries = module.message_codec.read_garc(source.read_bytes())
+        _, _, output_entries = module.message_codec.read_garc(output.read_bytes())
+        source_message_file = source_entries[module.MESSAGE_FILE_INDEX].files[0]
+        output_message_file = output_entries[module.MESSAGE_FILE_INDEX].files[0]
+        source_lines = module.message_codec.read_message_lines(source_message_file)
+        output_lines = module.message_codec.read_message_lines(output_message_file)
         title_home = module.SHORT_TITLE_HOME_MESSAGES.get(
             archive, source_lines[module.TITLE_HOME_LINE]
         )
@@ -637,19 +637,19 @@ def verify_messages(source_romfs: Path, output_romfs: Path) -> None:
             f"{module.TITLE_MODE_DOWNLOAD_MESSAGES[archive]}"
         )
         expected_lines = {
-            module.OFFLINE.INTERNET_CONNECTION_LINE: source_lines[module.OFFLINE.INTERNET_CONNECTION_LINE],
-            module.OFFLINE.BANK_CONNECTION_LINE: source_lines[module.OFFLINE.BANK_CONNECTION_LINE],
-            module.OFFLINE.SAVE_LINE: source_lines[module.OFFLINE.SAVE_LINE],
-            module.OFFLINE.DISCONNECT_LINE: source_lines[module.OFFLINE.DISCONNECT_LINE],
+            module.INTERNET_CONNECTION_LINE: source_lines[module.INTERNET_CONNECTION_LINE],
+            module.BANK_CONNECTION_LINE: source_lines[module.BANK_CONNECTION_LINE],
+            module.SAVE_LINE: source_lines[module.SAVE_LINE],
+            module.DISCONNECT_LINE: source_lines[module.DISCONNECT_LINE],
             module.TITLE_VERSION_LINE: source_lines[module.TITLE_VERSION_LINE],
             module.SUPPORT_LINE: source_lines[module.SUPPORT_LINE],
             module.MOVER_DOWNLOAD_LINE: source_lines[module.MOVER_DOWNLOAD_LINE],
             module.MOVER_INSTALLED_LINE: source_lines[module.MOVER_INSTALLED_LINE],
             module.HOME_LINE: source_lines[module.HOME_LINE],
             module.BLANK_LINE: "",
-            module.DOWNLOAD_PROGRESS_LINE: module.HELPER.MESSAGES[archive][1],
+            module.DOWNLOAD_PROGRESS_LINE: module.DOWNLOAD_PROGRESS_MESSAGES[archive],
             module.DOWNLOAD_SUCCESS_LINE: module.DOWNLOAD_SUCCESS_MESSAGES[archive],
-            module.DOWNLOAD_USE_BANK_LINE: module.HELPER.MENU_MESSAGES[archive],
+            module.DOWNLOAD_USE_BANK_LINE: module.DOWNLOAD_MENU_MESSAGES[archive],
             module.OFFLINE_INITIAL_CONNECT_LINE: module.OFFLINE_INITIAL_CONNECT_MESSAGES[archive],
             module.OFFLINE_BANK_CONNECTION_LINE: module.OFFLINE_BANK_CONNECTION_MESSAGES[archive],
             module.OFFLINE_SAVE_LINE: module.OFFLINE_SAVE_MESSAGES[archive],
@@ -657,16 +657,16 @@ def verify_messages(source_romfs: Path, output_romfs: Path) -> None:
             module.TITLE_MODE_OFFLINE_LINE: expected_title_mode_offline,
             module.TITLE_MODE_DOWNLOAD_LINE: expected_title_mode_download,
             module.DISABLED_LINE: module.DISABLED_MESSAGES[archive],
-            module.LANGUAGE_MENU_LINE: module.HELPER.LANGUAGE_MENU_MESSAGES[archive],
+            module.LANGUAGE_MENU_LINE: module.LANGUAGE_MENU_MESSAGES[archive],
             module.DOWNLOAD_GAME_SELECTION_LINE: module.DOWNLOAD_GAME_SELECTION_MESSAGES[archive],
         }
         for line, expected in expected_lines.items():
             if output_lines[line] != expected:
                 raise ValueError(f"message line {line} mismatch in archive {archive}")
-        source_greeting = module.HELPER.read_message_lines(
+        source_greeting = module.message_codec.read_message_lines(
             source_entries[module.MENU_MESSAGE_FILE_INDEX].files[0]
         )[module.MENU_GREETING_LINE]
-        output_greetings = module.HELPER.read_message_lines(
+        output_greetings = module.message_codec.read_message_lines(
             output_entries[module.MENU_MESSAGE_FILE_INDEX].files[0]
         )
         menu_greeting = module.SHORT_MENU_GREETINGS.get(archive, source_greeting)

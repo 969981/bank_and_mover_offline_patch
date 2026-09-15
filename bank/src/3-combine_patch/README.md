@@ -1,190 +1,318 @@
-# Step 3: combined offline and download patch
+# Combined offline and download patch
 
-This project builds one Pokemon Bank v1.5 patch with two runtime modes. It
-does not combine the binary output of the earlier patches: it selects the
-appropriate behavior at every shared network and save hook.
+This is the maintained Pokemon Bank v1.5 patch for base title
+`00040000000C9B00`. It incorporates the useful behavior and safety checks of
+the former standalone download and offline patches into one runtime-selectable
+build. It does not concatenate their IPS files: every shared network, data,
+message, and save hook dispatches according to a session mode.
 
-## Mode selection
+The upload patch has been permanently discontinued. This project only imports
+server data in download mode and uses a separate local copy in offline mode; it
+never uploads offline changes to the official service.
 
-The patch defaults to offline mode. Press the physical **R** button on the
-title screen to switch between offline and download mode; each press updates
-the mode shown near the bottom of the title screen. Press **A**, **START**, or touch the
-lower screen to enter Bank. The currently displayed mode is latched on that
-title-exit frame and cannot change during the Bank session.
+## Modes and recommended workflow
+
+The title screen defaults to **Offline Mode**. Press the physical **R** button
+to switch between **Offline Mode** and **Download Mode**. The line below the
+stock HOME-menu help updates immediately. Press **A**, **START**, or touch the
+lower screen to latch the displayed mode for the whole session; R no longer
+changes it after leaving the title screen.
 
 ```text
 Title screen (default: Offline)
-        |
-        +-- press R ---------------------------> Download shown
-        |
-        +-- press R again ----------------------> Offline shown
-        |
-        +-- A / START / touch -----------------> latch shown mode and enter
+        │
+        ├── R ───────────────► Download
+        ├── R again ─────────► Offline
+        └── A / START / touch
+                  │ latch displayed mode
+                  ├── Download ─► official server download ─► local file
+                  └── Offline  ─► local file ─► normal Bank use
 ```
 
-The stock version label remains unchanged. The upper screen's original
-HOME-return help stays intact, and a localized current-mode / press-R hint is
-appended on the following line in the same wide text pane. The
-feature menu's upper screen keeps the stock greeting; Japanese, English, and
-Korean use a one-line equivalent where the original occupied multiple lines.
-The selected mode follows it with a localized "Current Mode:" prefix. Both are
-supplied for all ten shipped language archives. Only the
-first entry on the lower-screen feature menu is replaced by the mode-specific
-label.
+Recommended first use:
 
-## Runtime message selection
+1. Back up the SD card and any existing `sd:/3ds/Bank/` files.
+2. Select Download Mode, enter the first feature-menu item, select any
+   compatible game, and let the official service return the complete Bank
+   object.
+3. Wait for the download-complete message and the return to the title screen.
+4. Confirm that `sd:/3ds/Bank/bankdata.bin` exists, then use Offline Mode for
+   normal Bank sessions.
 
-The combined archive keeps the stock network, Bank-connection, save, and
-disconnect entries unchanged. Mode-specific text is stored in appended entries
-and selected at the state that owns the message.
+Offline Mode can also create a new local Bank file through the stock first-use
+initializer when no recoverable local file exists. Downloading first is still
+preferred when an existing official Bank account must be preserved locally.
 
-| UI state | Offline mode | Download mode |
-|---|---|---|
-| Initial connection | Local offline connection message | Stock Internet-connection message |
-| Connection after game selection | Local Bank-data connection message | Downloading from the server to `sd:/3ds/Bank/bankdata.bin` |
-| Save | Local offline-file save message | Stock server-save message if this normally unreachable path is entered |
-| Normal disconnect | Local disconnect message | Stock disconnect message |
-| Disconnect after a successful capture | Not used | Download-complete message, then return to title |
-| Disconnect after language selection | Blank message | Blank message |
+## Local files and invariants
 
-The waiting screen, spinner, and rhythmic sound after game selection remain
-owned by the stock state initializer, update, and destructor. The patch does
-not hide or stop them early; after local work completes, the native exit path
-performs cleanup.
+Both modes use the same checked local-file implementation.
 
-## Offline mode
+| File | Purpose |
+|---|---|
+| `sd:/3ds/Bank/bankdata.bin` | Current complete Bank file (`0xBB518` bytes) |
+| `sd:/3ds/Bank/bankdata.tmp` | Fully written staging file used before commit |
+| `sd:/3ds/Bank/bankdata.bak` | Previous complete file retained during commit |
+| `sd:/3ds/Bank/bankdata.bin.break` | Byte-for-byte preservation copy of an unusable primary file |
+| `sd:/3ds/Bank/bankdata.bak.break` | Byte-for-byte preservation copy of an unusable backup file |
 
-Offline mode keeps the stock game-selection, Bank Box, and game-save logic,
-but replaces the remote Bank-data connection with the checked local-file flow
-from Step 2.
+The patch creates `sd:/3ds` and `sd:/3ds/Bank` when needed. Complete writes
+check file creation/opening, size setting, service results, flush behavior, and
+the actual byte count. A short or failed write is never accepted as a complete
+Bank file.
+
+`bankdata.tmp` is intentional: it prevents a failed write from replacing the
+last known primary file. `bankdata.bak` is the previous committed generation,
+not a second live Bank. `.break` files are only preservation copies made when
+an existing invalid file cannot participate in recovery.
+
+## Download Mode
+
+Download Mode retains the stock startup, account initialization, first-user
+server record creation, game detection, game selection, transaction recovery,
+network connection, Bank-data request, and disconnect jobs.
 
 ```text
-Select Use Pokemon Bank
-        |
-        v
+Feature menu: Download Bank Data
+        │
+        ▼
 Stock game detection and game selection
-        |
-        v
-Read sd:/3ds/Bank/bankdata.bin
-        |
-        +-- valid -----------------------------> stock local metadata and Box flow
-        |
-        +-- missing or invalid ----------------> backup recovery or stock first-use creation
+        │
+        ▼
+Stock server connection and complete Bank download
+        │
+        ▼
+Ordinary-Bank remote-success callback receives 0xBB518 bytes
+        │
+        ▼
+Write and flush bankdata.tmp; verify size and actual bytes written
+        ├── failure ─► leave the stock callback result unchanged
+        └── success
+              │
+              ▼
+Rotate old bin to bak; rename tmp to bin
+        ├── failure ─► preserve or restore the previous file where possible
+        └── success ─► mark the local capture complete
+                            │
+                            ▼
+Skip mileage, Box, and save UI
+        │
+        ▼
+Stock no-save transaction release and disconnect
+        │
+        ▼
+Download-complete message; return to title
 ```
 
-The local primary, staging, backup, and broken-file handling is documented in
-[the Step 2 README](../2-offline_patch/README.md). The offline local data is
-separate from data on the official service.
+The capture occurs only after the complete object has been returned; network
+chunks are not written incrementally. A second mode check at the success
+callback permits local writing only for ordinary Bank mode. Other internal
+routes cannot overwrite `bankdata.bin`.
 
-## Download mode
+The game-selection prompt explains that any selectable game can be used to
+obtain the complete Bank data. After a successful local commit, the flow
+bypasses local mileage, Bank Box, and save screens and uses the stock no-save
+exit. If local capture fails, the patch does not falsify the official callback
+result or silently mark the capture successful.
 
-Download mode retains the stock account, connection, remote-record creation,
-Bank-data download, and native disconnect paths. Both modes deliberately finish
-the separate optional-reward state locally, which avoids the points/reward UI
-while supplying its downstream runtime fields. This mode is intended to refresh
-the local data file without entering the normal Bank Box session.
+Download Mode locally completes the separate entitlement/campaign state to
+disable `free_campaign` and online gifts while supplying the downstream
+runtime fields. This state is independent of the normal local mileage states.
 
-Where a combined hook overlaps stock allocation setup, its download-mode branch
-replays every overwritten allocator-context, allocation, and root-load
-instruction before continuing after the original sequence. The official
-connection, first-use creation, and disconnect jobs therefore remain native.
+## Offline Mode: startup, recovery, and first use
+
+Offline Mode forces only the required network-facing state results and does
+not allocate the corresponding remote jobs. It first classifies the local
+files:
 
 ```text
-Select Download Bank Data
-        |
-        v
-Stock game detection, game selection, and server download
-        |
-        v
-Successful ordinary-Bank download callback
-        |
-        v
-Checked local stage and commit to sd:/3ds/Bank/bankdata.bin
-        |
-        +-- local capture succeeded -----------> skip points, Box, and save UI
-        |                                        -> stock no-save disconnect
-        |
-        +-- local capture failed -------------> stock callback outcome is unchanged
+Inspect bankdata.bin length and format header at offset 0x15C
+        ├── valid ─────────────────────────────► existing-record mode
+        └── missing or invalid
+                  │
+                  ▼
+             Inspect bankdata.bak
+                  ├── valid ─► read and validate all 0xBB518 bytes
+                  │            copy to bankdata.bin; retain bak
+                  │            create no .break file
+                  │            └───────────────► existing-record mode
+                  └── missing or invalid
+                            │
+                            ▼
+            Copy each existing invalid file to its .break path
+            (initial attempt plus up to three retries per file)
+                            │
+                            └──────────────────► stock first-use mode
 ```
 
-Only the ordinary Bank download route writes the local file. The HOME route
-does not use the capture callback, so it cannot overwrite local Bank data.
-When an ordinary capture succeeds, the completion message reports that the
-data was downloaded to the SD card and that Bank is returning to the title
-screen. The next normal start is offline mode.
+A valid primary or recoverable backup never creates a `.break` file. Missing
+files do not create placeholder `.break` files. If preservation copying fails
+four times, the invalid original remains untouched and first-use creation is
+still allowed to continue. If both files are absent, first use starts directly.
 
-## Shared feature-menu behavior
+The stock first-use decision and messages remain in control. The patch skips
+only the remote record-ID substates, then lets the native empty-object
+initializer obtain the available console/account values, create 100 localized
+Bank Boxes, and set the real creation date. The remote creation call is
+replaced by a checked direct write of the complete new `bankdata.bin`; a failed
+first write removes its partial output.
 
-The feature menu is intentionally small and predictable in both modes:
+The runtime offline entitlement expires at the console time plus 999 days.
+That value is separate from mileage time. Existing identity fields and the
+creation date stored in a valid local file are not rewritten.
 
-| Entry | Offline mode | Download mode |
+## Offline Mode: loading and Bank use
+
+```text
+Feature menu: Use Pokemon Bank
+        │
+        ▼
+Stock game-software checks and game selection
+        │
+        ▼
+Local Bank-data connection message (at least 2 seconds)
+        │
+        ▼
+Read and validate exactly 0xBB518 bytes from bankdata.bin
+        ├── failure ─► original error path
+        └── success
+              │
+              ▼
+Resume native metadata copy and selected-game callbacks
+        │
+        ▼
+Native local mileage states and reward UI when applicable
+        │
+        ▼
+Stock Bank Box and game interaction
+```
+
+The full file is loaded only after a game has been selected. The patch bypasses
+the remote request portion of the shared synchronization state, then resumes
+its native local substates. Box display, Pokemon movement, validation, and
+game interaction remain stock code.
+
+The stock local mileage calculation is retained. Offline Mode skips the two
+online-gift lookups for that state instance without clearing the persistent
+update-gift flag, so a later official session can still use it. The separate
+remote entitlement/campaign state is completed locally.
+
+The wait screen, spinner, and rhythmic sound remain owned by the original
+state initializer, update, and exit path. The combined patch reports local
+completion through the original state object instead of introducing a second
+UI/sound owner; native state exit performs the cleanup before the Box flow.
+
+## Offline save, commit, and rollback
+
+```text
+Stock full Bank serialization (0xBB518 bytes)
+        │
+        ▼
+Write bankdata.tmp + set size + flush + verify bytes written
+        ├── failure ─► report save failure; keep bankdata.bin
+        └── success
+              │
+              ▼
+Keep the save-progress screen visible for at least 2 seconds
+        │
+        ▼
+Stock cartridge / digital-game save
+        ├── failure ─► delete tmp; retain bin and bak
+        └── success
+              │
+              ▼
+Delete old bak ─► rename bin to bak ─► rename tmp to bin
+        ├── success ─► normal local disconnect
+        └── failure ─► restore bak where possible
+```
+
+The local staging write is synchronous, followed by a nonblocking state-machine
+delay; rendering continues and the file is not written repeatedly. Commit is
+allowed only after the original game-save result succeeds. Delete, rename,
+close, size, write-length, restoration, and rollback results are checked.
+Ending Bank use without saving does not install a new `bankdata.bin`.
+
+## Shared menu, messages, and language handling
+
+| Feature-menu entry | Offline Mode | Download Mode |
 |---|---|---|
 | First entry | Use Pokemon Bank | Download Bank Data |
 | About Pokemon Bank | Stock information screen | Stock information screen |
-| Support | Disabled; returns to the feature menu | Disabled; returns to the feature menu |
-| Poke Mover/eShop | Disabled; returns to the feature menu | Disabled; returns to the feature menu |
+| Support | Disabled; return to feature menu | Disabled; return to feature menu |
+| Poke Mover/eShop | Disabled; return to feature menu | Disabled; return to feature menu |
 | Pokemon HOME | Stock language-selection flow | Stock language-selection flow |
 | Back | Stock behavior | Stock behavior |
 
-The HOME entry is redirected before the HOME transfer state begins. It opens
-the existing language-selection flow instead, and does not trigger the
-ordinary Bank-data capture logic.
+The former HOME entry is redirected before any HOME networking or Box state is
+created. It opens the stock language selector. Before returning to the title,
+the patch copies the pending language and Japanese Kanji setting into the
+persistent settings object, starts native local-save mode 0, and waits for it
+to finish. The language therefore survives an immediate restart. A blank
+disconnect entry prevents a newly selected font from rendering stale text in
+the previous language.
+
+Stock network, Bank-connection, save, and disconnect entries remain unchanged.
+Mode-specific text is appended and selected only by the state that owns it.
+Title hints, menu descriptions, game-selection guidance, local connection/save
+messages, and download completion are provided for all ten shipped language
+archives: Japanese kana, Japanese kanji, English, French, Italian, German,
+Spanish, Korean, Simplified Chinese, and Traditional Chinese.
 
 ## Source layout
 
 | File | Role |
 |---|---|
-| `main.s` | Mode latch, dynamic hook dispatch, callback capture, and menu routing |
-| `combine_patch.c` | Shared checked local-file implementation |
-| `patch_messages.py` | Rebuilds the localized LayeredFS message archives |
-| `verify_patch.py` | Checks code ranges, branch destinations, IPS framing, and all localized messages |
-| `Makefile` | Compiles, injects, creates IPS, and writes the Luma release tree |
+| `main.s` | Title-mode latch, dynamic hook dispatch, capture trampoline, state routing, and menu handling |
+| `combine_patch.c` | Shared checked local-file implementation used by both modes |
+| `patch_messages.py` | Rebuilds and validates the ten localized LayeredFS archives |
+| `message_archive.py` | Self-contained GARC and encrypted message-file codec |
+| `verify_patch.py` | Verifies base hash, code ranges, hooks, IPS reconstruction, native instruction replay, and resources |
+| `Makefile` | Compiles, injects, creates the IPS, rebuilds messages, and writes the Luma release tree |
 
-## Build
+The patch leaves `0x00313910–0x00313A3F` unused because Luma installs its
+LayeredFS redirection payload from the title's original `.text` end. Patch code
+starts after that reserved area and remains below the executable limit at
+`0x00314000`.
 
-Set `DEVKITARM` to a devkitARM installation and place the extracted base code
-at `bank/00040000000C9B00.code`. The extracted Bank RomFS must be available at
-the default `ROMFS_SOURCE` path, or provide that Make variable explicitly.
-The supported decompressed code image has SHA-256
-`2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF`;
-the build verifier rejects a different base image.
+## Build and installation
 
-```text
+Set `DEVKITARM`, then place the user-dumped inputs at
+`bank/rom/exefs/00040000000C9B00.dec.code` and `bank/rom/romfs/`. Only
+`bank/rom/.gitkeep` is tracked; the code image and RomFS are deliberately
+ignored and must be extracted from the user's own copy. `ROMFS_SOURCE` may
+still be overridden explicitly. Python 3 is required for the message rebuild.
+
+```sh
 make -C bank/src/3-combine_patch all
 ```
 
-The complete Luma tree is generated at:
+The complete package is generated at:
 
 ```text
 bank/release/3-combine_patch/luma/titles/00040000000C9B00/
-  code.ips
-  romfs/
+├── code.ips
+└── romfs/
 ```
 
 Copy the generated `luma` directory to the SD card and enable Luma game
-patching. Test with a backed-up SD card and a disposable save before using it
-on hardware.
+patching. Test with a backed-up SD card and a disposable game save before using
+the patch on hardware.
 
-`all` also runs `verify_patch.py`. It checks that the local implementation fits
-inside the intentionally bypassed optional-reward state, that every patched ARM
-hook has its intended target, condition code, and overwritten padding, that the
-release IPS reproduces the patched code image byte-for-byte, and that all ten
-generated message archives retain the stock title and upper-menu greeting lines
-required by the UI. It also compares the replayed native allocation sequences
-against the supported base image.
+The verifier rejects an unsupported base image and checks that the imported
+local implementation fits in its verified executable region, each ARM hook and
+overwritten instruction is correct, the IPS reproduces the patched image
+byte-for-byte, and every generated message archive retains required stock
+entries.
 
 ## External open-source references
 
 - [devkitPro/libctru FS declarations](https://github.com/devkitPro/libctru/blob/master/libctru/include/3ds/services/fs.h)
-  were used to check the public FSUSER/FSFILE interfaces and result handling
-  used by the local-file layer.
+  and [implementation](https://github.com/devkitPro/libctru/blob/master/libctru/source/services/fs.c)
+  were used to verify the public FSUSER/FSFILE interfaces and result handling.
 - [Luma3DS loader patcher](https://github.com/LumaTeam/Luma3DS/blob/master/sysmodules/loader/source/patcher.c)
-  was used to check the title-specific `code.ips` and LayeredFS directory
-  layout.
+  was used to verify the title-specific `code.ips` and LayeredFS layout.
 - [pkNX TextFile](https://github.com/kwsch/pkNX/blob/master/pkNX.Structures/Text/TextFile.cs)
-  was used to check the public message-file encoding and line-table format
-  used by the resource rebuild tool.
+  was used to verify the public message-file encoding and line-table format.
 
-The current Bank binary is the authority for application addresses, state
-transitions, object layouts, file offsets, and patch sites. The external
-references above are only used for public platform and file-format interfaces.
+The current Bank binary remains authoritative for application addresses, state
+transitions, object layouts, file offsets, and patch sites. External references
+are used only for public platform and file-format interfaces.

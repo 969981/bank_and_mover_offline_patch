@@ -13,12 +13,12 @@ IPS_TOOL ?= $(TOOLS)/flips/flips
 PYTHON ?= python3
 BUILD := $(TARGET_ROOT)/build/3-combine_patch
 TITLE_ID := 00040000000C9C00
-BASE := $(TARGET_ROOT)/00040000000C9C00.code
-PATCHED := $(BUILD)/00040000000C9C00.code
+BASE := $(TARGET_ROOT)/rom/exefs/00040000000C9C00.dec.code
+PATCHED := $(BUILD)/00040000000C9C00.dec.code
 RELEASE_TITLE := $(TARGET_ROOT)/release/3-combine_patch/luma/titles/$(TITLE_ID)
 RELEASE_IPS := $(RELEASE_TITLE)/code.ips
 RELEASE_ROMFS := $(RELEASE_TITLE)/romfs
-ROMFS_SOURCE ?= ../../../../3ds_headless_ghidra/mover_base_v5_5_0/romfs
+ROMFS_SOURCE ?= $(TARGET_ROOT)/rom/romfs
 OBJECT := $(BUILD)/combine_patch.o
 DISASSEMBLY := $(BUILD)/combine_patch.disasm.txt
 SYMBOLS := $(BUILD)/armips-symbols.txt
@@ -35,7 +35,7 @@ all: $(RELEASE_IPS) layeredfs verify
 $(BUILD):
 	mkdir -p "$@"
 
-$(OBJECT): ../2-offline_patch/offline_patch.c | $(BUILD)
+$(OBJECT): combine_patch.c | $(BUILD)
 	"$(CC)" $(CFLAGS) -c "$<" -o "$@"
 	"$(OBJDUMP)" -dr -z "$@" > "$(DISASSEMBLY)"
 

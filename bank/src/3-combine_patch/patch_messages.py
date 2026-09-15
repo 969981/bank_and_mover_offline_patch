@@ -6,24 +6,112 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import sys
 from pathlib import Path
 
-
-def load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load helper: {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
+import message_archive as message_codec
 
 
-SOURCE_ROOT = Path(__file__).parents[1]
-OFFLINE = load_module("combine_offline_messages", SOURCE_ROOT / "2-offline_patch" / "patch_messages.py")
-HELPER = load_module("combine_message_archive", SOURCE_ROOT / "1-download_patch" / "patch_messages.py")
+ARCHIVES = (
+    "0/0/4", "0/0/5", "0/0/6", "0/0/7", "0/0/8",
+    "0/0/9", "0/1/0", "0/1/1", "0/1/2", "0/1/3",
+)
+MESSAGE_FILE_INDEX = 39
+INTERNET_CONNECTION_LINE = 12
+BANK_CONNECTION_LINE = 14
+SAVE_LINE = 8
+DISCONNECT_LINE = 13
+MENU_LINE = 41
+
+DOWNLOAD_PROGRESS_MESSAGES = {
+    "0/0/4": "ポケモンバンクからSDへ\nダウンロードしています\nsd:/3ds/Bank/bankdata.bin",
+    "0/0/5": "ポケモンバンクからSDへダウンロード中\nsd:/3ds/Bank/bankdata.bin",
+    "0/0/6": "Downloading from Pokémon Bank to the local SD card...\nsd:/3ds/Bank/bankdata.bin",
+    "0/0/7": "Téléchargement de Banque Pokémon vers la carte SD…\nsd:/3ds/Bank/bankdata.bin",
+    "0/0/8": "Download dalla Banca Pokémon alla scheda SD…\nsd:/3ds/Bank/bankdata.bin",
+    "0/0/9": "Bankdaten werden auf die SD-Karte heruntergeladen…\nsd:/3ds/Bank/bankdata.bin",
+    "0/1/0": "Descargando del Banco de Pokémon a la tarjeta SD…\nsd:/3ds/Bank/bankdata.bin",
+    "0/1/1": "포켓몬 뱅크에서 SD 카드로\n다운로드 중입니다.\nsd:/3ds/Bank/bankdata.bin",
+    "0/1/2": "正在从宝可梦虚拟银行下载数据到本地 SD 卡：\nsd:/3ds/Bank/bankdata.bin",
+    "0/1/3": "正在從寶可夢虛擬銀行下載資料到本機 SD 卡：\nsd:/3ds/Bank/bankdata.bin",
+}
+
+DOWNLOAD_MENU_MESSAGES = {
+    "0/0/4": "ぎんこうデータを　ほんたいにダウンロード",
+    "0/0/5": "銀行データを本体にダウンロード",
+    "0/0/6": "Download Bank Data",
+    "0/0/7": "Télécharger les données",
+    "0/0/8": "Scarica dati Banca",
+    "0/0/9": "Bankdaten laden",
+    "0/1/0": "Descargar datos del Banco",
+    "0/1/1": "뱅크 데이터 다운로드",
+    "0/1/2": "下载银行数据到本地",
+    "0/1/3": "下載銀行資料到本機",
+}
+
+LANGUAGE_MENU_MESSAGES = {
+    "0/0/4": "げんごを　えらぶ",
+    "0/0/5": "言語を選ぶ",
+    "0/0/6": "Choose Language",
+    "0/0/7": "Choisir la langue",
+    "0/0/8": "Scegli la lingua",
+    "0/0/9": "Sprache wählen",
+    "0/1/0": "Elegir idioma",
+    "0/1/1": "언어 선택",
+    "0/1/2": "选择语言",
+    "0/1/3": "選擇語言",
+}
+
+OFFLINE_INITIAL_CONNECT_MESSAGES = {
+    "0/0/4": "せつぞくしています……",
+    "0/0/5": "接続しています……",
+    "0/0/6": "Connecting...",
+    "0/0/7": "Connexion…",
+    "0/0/8": "Connessione in corso...",
+    "0/0/9": "Verbindung wird hergestellt...",
+    "0/1/0": "Conectando...",
+    "0/1/1": "연결 중입니다…",
+    "0/1/2": "正在连接中……",
+    "0/1/3": "正在連線中……",
+}
+
+OFFLINE_BANK_CONNECTION_MESSAGES = {
+    "0/0/4": "ローカル オフラインデータに\nせつぞくしています……",
+    "0/0/5": "ローカルオフラインデータに\n接続しています……",
+    "0/0/6": "Communicating with the local offline\nPokemon Bank data...",
+    "0/0/7": "Connexion aux données locales hors ligne\nde Banque Pokémon…",
+    "0/0/8": "Connessione ai dati locali offline\ndella Banca Pokémon...",
+    "0/0/9": "Verbindung mit den lokalen Offline-Daten\nder Pokémon Bank...",
+    "0/1/0": "Conectando con los datos locales sin conexión\ndel Banco de Pokémon...",
+    "0/1/1": "로컬 오프라인 포켓몬 뱅크 데이터에\n연결 중입니다…",
+    "0/1/2": "正在和宝可梦虚拟银行的\n本地离线数据进行连接……",
+    "0/1/3": "正在和寶可夢虛擬銀行的\n本機離線資料進行連線……",
+}
+
+OFFLINE_SAVE_MESSAGES = {
+    "0/0/4": "レポートを　かいて\nローカル オフラインデータに　ほぞん　しています\nでんげんを　きらないで　ください",
+    "0/0/5": "レポートを　書いて\nローカルオフラインデータに保存しています\n電源を　切らないで　ください",
+    "0/0/6": "Saving the data to the local offline file...\nDon’t turn off the power.",
+    "0/0/7": "Sauvegarde des données dans le fichier hors ligne local…\nNe pas éteindre la console.",
+    "0/0/8": "Salvataggio dei dati nel file offline locale in corso.\nNon spegnere la console.",
+    "0/0/9": "Daten werden in der lokalen Offline-Datei gespeichert...\nBitte das System nicht ausschalten.",
+    "0/1/0": "Guardando los datos en el archivo local sin conexión...\nNo apagues la consola.",
+    "0/1/1": "리포트를 기록하고\n로컬 오프라인 데이터에 저장하고 있습니다\n전원을 끄지 않도록 해주십시오",
+    "0/1/2": "正在写入记录，\n并将数据写入本地离线文件。\n请勿切断电源。",
+    "0/1/3": "正在寫入記錄，\n並將資料寫入本機離線檔案。\n請勿關閉電源。",
+}
+
+OFFLINE_DISCONNECT_MESSAGES = {
+    "0/0/4": "せつだん　しています……",
+    "0/0/5": "接続を切っています……",
+    "0/0/6": "Disconnecting...",
+    "0/0/7": "Déconnexion…",
+    "0/0/8": "Disconnessione…",
+    "0/0/9": "Verbindung wird getrennt...",
+    "0/1/0": "Desconectando...",
+    "0/1/1": "연결을 종료하는 중입니다…",
+    "0/1/2": "正在断开连接……",
+    "0/1/3": "正在中斷連線……",
+}
 
 SUPPORT_LINE = 43
 MOVER_DOWNLOAD_LINE = 44
@@ -133,14 +221,6 @@ TITLE_MODE_DOWNLOAD_MESSAGES = {
     "0/1/3": f"目前模式：下載模式（按{R_BUTTONS['0/1/3']}鍵切換模式）",
 }
 
-# Keep the four state-specific offline message sets visible in this combined
-# source while continuing to use the already verified Step 2 translations.
-# 在本合并源码中明确列出四组状态专用离线文本，同时继续使用已验证的第 2 步翻译。
-OFFLINE_INITIAL_CONNECT_MESSAGES = OFFLINE.INTERNET_MESSAGES
-OFFLINE_BANK_CONNECTION_MESSAGES = OFFLINE.BANK_CONNECTION_MESSAGES
-OFFLINE_SAVE_MESSAGES = OFFLINE.SAVE_MESSAGES
-OFFLINE_DISCONNECT_MESSAGES = OFFLINE.DISCONNECT_MESSAGES
-
 OFFLINE_MENU_GREETINGS = {
     "0/0/4": "げんざいのモード：オフラインモード\nローカルデータは サーバーデータと べつです",
     "0/0/5": "現在のモード：オフラインモード\nローカルデータはサーバーデータと別です",
@@ -214,10 +294,9 @@ def verify_kana_archive_messages() -> None:
         OFFLINE_MENU_GREETINGS[archive],
         DOWNLOAD_MENU_GREETINGS[archive],
         DOWNLOAD_SUCCESS_MESSAGES[archive],
-        HELPER.MESSAGES[archive][0],
-        HELPER.MESSAGES[archive][1],
-        HELPER.MENU_MESSAGES[archive],
-        HELPER.LANGUAGE_MENU_MESSAGES[archive],
+        DOWNLOAD_PROGRESS_MESSAGES[archive],
+        DOWNLOAD_MENU_MESSAGES[archive],
+        LANGUAGE_MENU_MESSAGES[archive],
         DOWNLOAD_GAME_SELECTION_MESSAGES[archive],
     )
     for text in texts:
@@ -238,34 +317,34 @@ def main() -> None:
     args = parser.parse_args()
     verify_kana_archive_messages()
 
-    for archive in OFFLINE.ARCHIVES:
+    for archive in ARCHIVES:
         source = args.source_romfs / "a" / Path(archive)
         destination = args.output_romfs / "a" / Path(archive)
-        version, alignment, entries = HELPER.read_garc(source.read_bytes())
-        entry = entries[OFFLINE.MESSAGE_FILE_INDEX]
+        version, alignment, entries = message_codec.read_garc(source.read_bytes())
+        entry = entries[MESSAGE_FILE_INDEX]
         original = entry.files[0]
-        original_lines = HELPER.read_message_lines(original)
-        section_offset = HELPER._u32(original, 12)
-        disconnect_flags = HELPER._u16(
-            original, section_offset + 4 + OFFLINE.DISCONNECT_LINE * 8 + 6
+        original_lines = message_codec.read_message_lines(original)
+        section_offset = message_codec.u32(original, 12)
+        disconnect_flags = message_codec.u16(
+            original, section_offset + 4 + DISCONNECT_LINE * 8 + 6
         )
-        bank_flags = HELPER._u16(
-            original, section_offset + 4 + OFFLINE.BANK_CONNECTION_LINE * 8 + 6
+        bank_flags = message_codec.u16(
+            original, section_offset + 4 + BANK_CONNECTION_LINE * 8 + 6
         )
-        use_bank_flags = HELPER._u16(
-            original, section_offset + 4 + HELPER.MENU_LINE * 8 + 6
+        use_bank_flags = message_codec.u16(
+            original, section_offset + 4 + MENU_LINE * 8 + 6
         )
-        game_selection_flags = HELPER._u16(
+        game_selection_flags = message_codec.u16(
             original, section_offset + 4 + 3 * 8 + 6
         )
-        title_mode_flags = HELPER._u16(
+        title_mode_flags = message_codec.u16(
             original, section_offset + 4 + TITLE_HOME_LINE * 8 + 6
         )
-        internet_flags = HELPER._u16(
-            original, section_offset + 4 + OFFLINE.INTERNET_CONNECTION_LINE * 8 + 6
+        internet_flags = message_codec.u16(
+            original, section_offset + 4 + INTERNET_CONNECTION_LINE * 8 + 6
         )
-        save_flags = HELPER._u16(
-            original, section_offset + 4 + OFFLINE.SAVE_LINE * 8 + 6
+        save_flags = message_codec.u16(
+            original, section_offset + 4 + SAVE_LINE * 8 + 6
         )
         if args.title_r_glyph_test:
             # Diagnostic archive: isolate private-use glyph rendering from
@@ -298,14 +377,14 @@ def main() -> None:
                     f"{archive} {mode_name} title text exceeds "
                     f"{TITLE_TEXT_BUFFER_LENGTH} characters: {len(title_text)}"
                 )
-        entry.files[0] = HELPER.patch_message_file(
+        entry.files[0] = message_codec.patch_message_file(
             original,
             {},
             (
                 ("", disconnect_flags),
-                (HELPER.MESSAGES[archive][1], bank_flags),
+                (DOWNLOAD_PROGRESS_MESSAGES[archive], bank_flags),
                 (DOWNLOAD_SUCCESS_MESSAGES[archive], disconnect_flags),
-                (HELPER.MENU_MESSAGES[archive], use_bank_flags),
+                (DOWNLOAD_MENU_MESSAGES[archive], use_bank_flags),
                 (OFFLINE_INITIAL_CONNECT_MESSAGES[archive], internet_flags),
                 (OFFLINE_BANK_CONNECTION_MESSAGES[archive], bank_flags),
                 (OFFLINE_SAVE_MESSAGES[archive], save_flags),
@@ -313,14 +392,14 @@ def main() -> None:
                 (title_mode_offline, title_mode_flags),
                 (title_mode_download, title_mode_flags),
                 (DISABLED_MESSAGES[archive], use_bank_flags),
-                (HELPER.LANGUAGE_MENU_MESSAGES[archive], use_bank_flags),
+                (LANGUAGE_MENU_MESSAGES[archive], use_bank_flags),
                 (DOWNLOAD_GAME_SELECTION_MESSAGES[archive], game_selection_flags),
             ),
         )
         greeting_entry = entries[MENU_MESSAGE_FILE_INDEX]
         greeting_original = greeting_entry.files[0]
-        greeting_section_offset = HELPER._u32(greeting_original, 12)
-        greeting_flags = HELPER._u16(
+        greeting_section_offset = message_codec.u32(greeting_original, 12)
+        greeting_flags = message_codec.u16(
             greeting_original, greeting_section_offset + 4 + MENU_GREETING_LINE * 8 + 6
         )
         # Keep the stock line untouched and append two complete mode-specific
@@ -328,7 +407,7 @@ def main() -> None:
         # its one-line equivalent) and then adds the selected-mode explanation.
         # 原版行保持不变，另行追加两条完整的模式文本。每条先放原版欢迎语（或其
         # 一行等义版本），再追加所选模式说明。
-        greeting_original_lines = HELPER.read_message_lines(greeting_original)
+        greeting_original_lines = message_codec.read_message_lines(greeting_original)
         menu_greeting = SHORT_MENU_GREETINGS.get(
             archive, greeting_original_lines[MENU_GREETING_LINE]
         )
@@ -340,7 +419,7 @@ def main() -> None:
             f"{menu_greeting}\n"
             f"{DOWNLOAD_MENU_GREETINGS[archive]}"
         )
-        greeting_entry.files[0] = HELPER.patch_message_file(
+        greeting_entry.files[0] = message_codec.patch_message_file(
             greeting_original,
             {},
             (
@@ -348,12 +427,12 @@ def main() -> None:
                 (download_menu_greeting, greeting_flags),
             ),
         )
-        rebuilt = HELPER.write_garc(version, alignment, entries)
-        rebuilt_entries = HELPER.read_garc(rebuilt)[2]
-        rebuilt_lines = HELPER.read_message_lines(
-            rebuilt_entries[OFFLINE.MESSAGE_FILE_INDEX].files[0]
+        rebuilt = message_codec.write_garc(version, alignment, entries)
+        rebuilt_entries = message_codec.read_garc(rebuilt)[2]
+        rebuilt_lines = message_codec.read_message_lines(
+            rebuilt_entries[MESSAGE_FILE_INDEX].files[0]
         )
-        rebuilt_greetings = HELPER.read_message_lines(
+        rebuilt_greetings = message_codec.read_message_lines(
             rebuilt_entries[MENU_MESSAGE_FILE_INDEX].files[0]
         )
         expected = {
@@ -362,9 +441,9 @@ def main() -> None:
             MOVER_INSTALLED_LINE: original_lines[MOVER_INSTALLED_LINE],
             HOME_LINE: original_lines[HOME_LINE],
             BLANK_LINE: "",
-            DOWNLOAD_PROGRESS_LINE: HELPER.MESSAGES[archive][1],
+            DOWNLOAD_PROGRESS_LINE: DOWNLOAD_PROGRESS_MESSAGES[archive],
             DOWNLOAD_SUCCESS_LINE: DOWNLOAD_SUCCESS_MESSAGES[archive],
-            DOWNLOAD_USE_BANK_LINE: HELPER.MENU_MESSAGES[archive],
+            DOWNLOAD_USE_BANK_LINE: DOWNLOAD_MENU_MESSAGES[archive],
             OFFLINE_INITIAL_CONNECT_LINE: OFFLINE_INITIAL_CONNECT_MESSAGES[archive],
             OFFLINE_BANK_CONNECTION_LINE: OFFLINE_BANK_CONNECTION_MESSAGES[archive],
             OFFLINE_SAVE_LINE: OFFLINE_SAVE_MESSAGES[archive],
@@ -372,7 +451,7 @@ def main() -> None:
             TITLE_MODE_OFFLINE_LINE: title_mode_offline,
             TITLE_MODE_DOWNLOAD_LINE: title_mode_download,
             DISABLED_LINE: DISABLED_MESSAGES[archive],
-            LANGUAGE_MENU_LINE: HELPER.LANGUAGE_MENU_MESSAGES[archive],
+            LANGUAGE_MENU_LINE: LANGUAGE_MENU_MESSAGES[archive],
             DOWNLOAD_GAME_SELECTION_LINE: DOWNLOAD_GAME_SELECTION_MESSAGES[archive],
         }
         for index, value in expected.items():

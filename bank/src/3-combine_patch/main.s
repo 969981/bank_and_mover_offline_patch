@@ -37,7 +37,7 @@
 .definelabel CombinePatch_DownloadMenuGreeting, 0x1C
 .definelabel CombinePatch_DownloadGameSelectionPrompt, 0x6C
 
-.open "../../00040000000C9B00.code", "../../build/3-combine_patch/00040000000C9B00.code", 0x00100000
+.open "../../rom/exefs/00040000000C9B00.dec.code", "../../build/3-combine_patch/00040000000C9B00.dec.code", 0x00100000
 
 // Offline baseline hooks. Each site is retained so the combined project starts
 // from the tested local-data behavior rather than duplicating a second patch.

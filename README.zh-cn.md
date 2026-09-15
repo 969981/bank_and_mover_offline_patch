@@ -13,7 +13,7 @@ Pokemon Bank 和 Poke Mover 的下载补丁、离线补丁与合并补丁均已�
 
 普通玩家安装发行补丁时不需要原始 `.code` 文件，只需要对应 `release` 目录中的 `code.ips`。只有自行重新编译补丁时才需要原始 `.code`。
 
-## 获取原始 code
+## 获取原始 code 与 RomFS
 
 请只从自己 3DS 上已安装的正版软件中提取代码，不要传播提取出的文件。
 
@@ -27,18 +27,42 @@ Pokemon Bank 和 Poke Mover 的下载补丁、离线补丁与合并补丁均已�
    | Poke Mover | `00040000000C9C00` |
 
 4. 选择 `Open title folder`。
-5. 选择包含可执行代码的 `.app`，按 `A`，依次选择 `NCCH image options...` 和 `Extract .code`。
-6. 从 `SD:/gm9/out/` 把生成的、已经解压的 `.dec.code` 文件复制到电脑。
-7. 按下表改名并放入对应工程目录。
+5. 选择包含可执行代码的 `.app`，按 `A`，依次选择 `NCCH image options...` 和 `Extract .code`。完成后，GodMode9 会把 `<Title ID>.dec.code` 写入 `SD:/gm9/out/`。
+6. 再次选择同一个 `.app`，按 `A`，依次选择 `NCCH image options...` 和 `Mount image to drive`。进入挂载的 `G:` 盘后，把光标移到 `romfs` 目录并按 `Y` 复制；按 `B` 返回驱动器列表，进入 `[0:] SDCARD` → `gm9` → `out`，按 `Y` 粘贴，再按 `A` 确认。完整目录将保存为 `SD:/gm9/out/romfs/`。
+7. 按 `HOME`，选择 `Poweroff system`。把 SD 卡连接到电脑，然后按下列位置复制文件：
+
+   - Bank：把 `SD:/gm9/out/00040000000C9B00.dec.code` 复制到 `bank/rom/exefs/00040000000C9B00.dec.code`，把 `SD:/gm9/out/romfs/` 复制到 `bank/rom/romfs/`。
+   - Mover：把 `SD:/gm9/out/00040000000C9C00.dec.code` 复制到 `mover/rom/exefs/00040000000C9C00.dec.code`，把 `SD:/gm9/out/romfs/` 复制到 `mover/rom/romfs/`。
+
+   每次只处理一个软件；复制到电脑后先移走 `SD:/gm9/out/romfs/`，再提取另一个软件，避免同名目录相互覆盖。
 
 ## 所需文件及 SHA-1
 
 | 软件 | 工程内路径 | 大小 | SHA-1 |
 |---|---|---:|---|
-| Pokemon Bank | `bank/00040000000C9B00.code` | 2,801,664 字节 | `5AB630856835DCF2DBDF9A62244DD19E46AE1C7C` |
-| Poke Mover | `mover/00040000000C9C00.code` | 2,269,184 字节 | `583859C1E874D11650EFBDDE51F470ECF96900C4` |
+| Pokemon Bank | `bank/rom/exefs/00040000000C9B00.dec.code` | 2,801,664 字节 | `5AB630856835DCF2DBDF9A62244DD19E46AE1C7C` |
+| Poke Mover | `mover/rom/exefs/00040000000C9C00.dec.code` | 2,269,184 字节 | `583859C1E874D11650EFBDDE51F470ECF96900C4` |
 
-如果文件大小或 SHA-1 不一致，说明提取出的代码不是本工程针对的版本。不要使用不匹配的文件生成 IPS。
+如果文件大小或 SHA-1 不一致，说明提取出的代码不是本工程针对的版本，或没有正确完成提取与解压。不要使用不匹配的文件生成 IPS。RomFS 资源应保持各文件的原生格式，直接复制挂载后的完整 `romfs` 目录，不要再对整个目录进行额外解压。
+
+本地输入文件的完整布局如下：
+
+```text
+bank/rom/
+├── exefs/
+│   └── 00040000000C9B00.dec.code
+└── romfs/
+    └── ...
+
+mover/rom/
+├── exefs/
+│   └── 00040000000C9C00.dec.code
+└── romfs/
+    └── ...
+```
+
+Git 只跟踪各自空目录中的 `rom/.gitkeep` 占位文件。提取出的 `.code` 和 RomFS 数据
+均已被 Git 忽略，不应提交或传播。
 
 ## 编译
 

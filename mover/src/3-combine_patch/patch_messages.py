@@ -7,9 +7,9 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import sys
 from pathlib import Path
+
+import message_archive as message_codec
 
 
 ARCHIVES = ("0/0/4", "0/0/5", "0/0/6", "0/0/7", "0/0/8", "0/0/9",
@@ -18,12 +18,68 @@ MESSAGE_FILE_INDEX = 23
 TITLE_HOME_LINE = 39
 TITLE_OFFLINE_LINE = 67
 TITLE_ORIGINAL_LINE = 68
+STOCK_INITIAL_CONNECT_LINE = 13
+STOCK_BANK_CONNECT_LINE = 15
+STOCK_SAVE_LINE = 9
+STOCK_DISCONNECT_LINE = 14
 INITIAL_CONNECT_LINE = 69
 BANK_CONNECT_LINE = 70
 SAVE_LINE = 71
 DISCONNECT_LINE = 72
 TITLE_TEXT_BUFFER_LENGTH = 54
 R_BUTTON = "\ue005"
+
+INTERNET_MESSAGES = {
+    "0/0/4": "せつぞくしています……",
+    "0/0/5": "接続しています……",
+    "0/0/6": "Connecting...",
+    "0/0/7": "Connexion…",
+    "0/0/8": "Connessione in corso...",
+    "0/0/9": "Verbindung wird hergestellt...",
+    "0/1/0": "Conectando...",
+    "0/1/1": "연결 중입니다…",
+    "0/1/2": "正在连接中……",
+    "0/1/3": "正在連線中……",
+}
+
+BANK_CONNECTION_MESSAGES = {
+    "0/0/4": "ローカル オフラインデータに\nせつぞくしています……",
+    "0/0/5": "ローカルオフラインデータに\n接続しています……",
+    "0/0/6": "Communicating with the local offline\nPokemon Bank data...",
+    "0/0/7": "Connexion aux données locales hors ligne\nde Banque Pokémon…",
+    "0/0/8": "Connessione ai dati locali offline\ndella Banca Pokémon...",
+    "0/0/9": "Verbindung mit den lokalen Offline-Daten\nder Pokémon Bank...",
+    "0/1/0": "Conectando con los datos locales sin conexión\ndel Banco de Pokémon...",
+    "0/1/1": "로컬 오프라인 포켓몬 뱅크 데이터에\n연결 중입니다…",
+    "0/1/2": "正在和宝可梦虚拟银行的\n本地离线数据进行连接……",
+    "0/1/3": "正在和寶可夢虛擬銀行的\n本機離線資料進行連線……",
+}
+
+SAVE_MESSAGES = {
+    "0/0/4": "レポートを　かいて\nポケモンを　ローカル オフラインデータに\nほぞん　しています\nでんげんを　きらないで　ください",
+    "0/0/5": "レポートを　書いて\nポケモンをローカルオフラインデータに\n保存しています\n電源を　切らないで　ください",
+    "0/0/6": "Your game is being saved and your Pokémon moved\nto the local offline Bank data.\nDon’t turn off the power.",
+    "0/0/7": "Sauvegarde du jeu et transfert des Pokémon\nvers les données locales hors ligne…\nNe pas éteindre la console.",
+    "0/0/8": "Salvataggio del gioco e dei Pokémon\nnei dati offline locali in corso.\nNon spegnere la console.",
+    "0/0/9": "Spielstand und Pokémon werden in den lokalen\nOffline-Bankdaten gespeichert...\nBitte das System nicht ausschalten.",
+    "0/1/0": "Guardando la partida y los Pokémon en los datos\nlocales sin conexión del Banco...\nNo apagues la consola.",
+    "0/1/1": "리포트를 기록하고 포켓몬을\n로컬 오프라인 데이터에 저장하고 있습니다\n전원을 끄지 않도록 해주십시오",
+    "0/1/2": "正在写入记录，\n并将宝可梦写入本地离线数据。\n请勿切断电源。",
+    "0/1/3": "正在寫入記錄，\n並將寶可夢寫入本機離線資料。\n請勿關閉電源。",
+}
+
+DISCONNECT_MESSAGES = {
+    "0/0/4": "せつだん　しています……",
+    "0/0/5": "接続を切っています……",
+    "0/0/6": "Disconnecting...",
+    "0/0/7": "Déconnexion…",
+    "0/0/8": "Disconnessione…",
+    "0/0/9": "Verbindung wird getrennt...",
+    "0/1/0": "Desconectando...",
+    "0/1/1": "연결을 종료하는 중입니다…",
+    "0/1/2": "正在断开连接……",
+    "0/1/3": "正在中斷連線……",
+}
 
 TITLE_HOME_SHORT = {
     "0/0/4": "\ue073を押すとHOMEメニューに戻ります",
@@ -65,39 +121,25 @@ TITLE_ORIGINAL = {
 }
 
 
-def load_module(name: str, path: Path):
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load helper: {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-romfs", required=True, type=Path)
     parser.add_argument("--output-romfs", required=True, type=Path)
     args = parser.parse_args()
 
-    source_root = Path(__file__).parents[1]
-    offline = load_module("mover_offline_messages", source_root / "2-offline_patch" / "patch_messages.py")
-    helper = offline.load_archive_helpers()
-
     for archive in ARCHIVES:
         source = args.source_romfs / "a" / Path(archive)
         destination = args.output_romfs / "a" / Path(archive)
-        version, alignment, entries = helper.read_garc(source.read_bytes())
+        version, alignment, entries = message_codec.read_garc(source.read_bytes())
         entry = entries[MESSAGE_FILE_INDEX]
         original = entry.files[0]
-        original_lines = helper.read_message_lines(original)
+        original_lines = message_codec.read_message_lines(original)
         if len(original_lines) != TITLE_OFFLINE_LINE:
             raise ValueError(f"unexpected stock line count for {archive}: {len(original_lines)}")
-        section_offset = helper._u32(original, 12)
+        section_offset = message_codec.u32(original, 12)
 
         def flags(line: int) -> int:
-            return helper._u16(original, section_offset + 4 + line * 8 + 6)
+            return message_codec.u16(original, section_offset + 4 + line * 8 + 6)
 
         offline_title = f"{TITLE_HOME_SHORT[archive]}\n{TITLE_OFFLINE[archive]}"
         original_title = f"{TITLE_HOME_SHORT[archive]}\n{TITLE_ORIGINAL[archive]}"
@@ -108,30 +150,30 @@ def main() -> None:
                     f"{TITLE_TEXT_BUFFER_LENGTH} characters: {len(text)}"
                 )
 
-        entry.files[0] = helper.patch_message_file(
+        entry.files[0] = message_codec.patch_message_file(
             original,
             {},
             (
                 (offline_title, flags(TITLE_HOME_LINE)),
                 (original_title, flags(TITLE_HOME_LINE)),
-                (offline.INTERNET_MESSAGES[archive], flags(offline.INTERNET_CONNECTION_LINE)),
-                (offline.BANK_CONNECTION_MESSAGES[archive], flags(offline.BANK_CONNECTION_LINE)),
-                (offline.SAVE_MESSAGES[archive], flags(offline.SAVE_LINE)),
-                (offline.DISCONNECT_MESSAGES[archive], flags(offline.DISCONNECT_LINE)),
+                (INTERNET_MESSAGES[archive], flags(STOCK_INITIAL_CONNECT_LINE)),
+                (BANK_CONNECTION_MESSAGES[archive], flags(STOCK_BANK_CONNECT_LINE)),
+                (SAVE_MESSAGES[archive], flags(STOCK_SAVE_LINE)),
+                (DISCONNECT_MESSAGES[archive], flags(STOCK_DISCONNECT_LINE)),
             ),
         )
-        rebuilt = helper.write_garc(version, alignment, entries)
-        rebuilt_lines = helper.read_message_lines(
-            helper.read_garc(rebuilt)[2][MESSAGE_FILE_INDEX].files[0]
+        rebuilt = message_codec.write_garc(version, alignment, entries)
+        rebuilt_lines = message_codec.read_message_lines(
+            message_codec.read_garc(rebuilt)[2][MESSAGE_FILE_INDEX].files[0]
         )
         expected = {
             TITLE_HOME_LINE: original_lines[TITLE_HOME_LINE],
             TITLE_OFFLINE_LINE: offline_title,
             TITLE_ORIGINAL_LINE: original_title,
-            INITIAL_CONNECT_LINE: offline.INTERNET_MESSAGES[archive],
-            BANK_CONNECT_LINE: offline.BANK_CONNECTION_MESSAGES[archive],
-            SAVE_LINE: offline.SAVE_MESSAGES[archive],
-            DISCONNECT_LINE: offline.DISCONNECT_MESSAGES[archive],
+            INITIAL_CONNECT_LINE: INTERNET_MESSAGES[archive],
+            BANK_CONNECT_LINE: BANK_CONNECTION_MESSAGES[archive],
+            SAVE_LINE: SAVE_MESSAGES[archive],
+            DISCONNECT_LINE: DISCONNECT_MESSAGES[archive],
         }
         for line, value in expected.items():
             if rebuilt_lines[line] != value:

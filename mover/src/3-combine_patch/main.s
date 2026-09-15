@@ -21,7 +21,7 @@
 .definelabel CombinePatch_SaveMessage,         71
 .definelabel CombinePatch_DisconnectMessage,   72
 
-.open "../../00040000000C9C00.code", "../../build/3-combine_patch/00040000000C9C00.code", 0x00100000
+.open "../../rom/exefs/00040000000C9C00.dec.code", "../../build/3-combine_patch/00040000000C9C00.dec.code", 0x00100000
 
 // Title mode selection. The displayed R uses the same private-use button glyph
 // as the Bank patch and is independent of the native input bit.
