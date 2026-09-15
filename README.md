@@ -4,7 +4,12 @@
 
 ## Current status
 
-Step 1, the download patch, is implemented for both Pokemon Bank and Poke Mover. It saves the complete downloaded Bank data to `/3ds/Bank/bankdata.bin`. The offline and upload patches are reserved for later implementation.
+The download, offline, and combined patches are implemented for both Pokemon Bank and Poke Mover. All local Bank data uses `/3ds/Bank/bankdata.bin`.
+
+- Pokemon Bank's combined patch switches between download and offline modes.
+- Poke Mover's combined patch switches between original and offline modes.
+
+The upload patch has been permanently discontinued and will not be implemented or distributed. Safe re-upload would require proven handling of current server-side identity fields, revisions, timestamps, transaction state, and conflicts between local and remote changes. Those validation rules are not sufficiently established, so this project will not risk modifying server-side Bank data. There is no upload-patch build target or release.
 
 Players installing a release do not need an original `.code` file. They only need the generated `code.ips` under the appropriate `release` directory. The original `.code` files are required only when rebuilding the patches.
 
@@ -60,11 +65,16 @@ make -C bank ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 make -C mover ARMIPS=/path/to/armips IPS_TOOL=/path/to/flips
 ```
 
-The release patches are written to:
+The release patches are written below each application's `release` directory:
 
 ```text
 bank/release/1-download_patch/luma/titles/00040000000C9B00/code.ips
+bank/release/2-offline_patch/luma/titles/00040000000C9B00/code.ips
+bank/release/3-combine_patch/luma/titles/00040000000C9B00/code.ips
+
 mover/release/1-download_patch/luma/titles/00040000000C9C00/code.ips
+mover/release/2-offline_patch/luma/titles/00040000000C9C00/code.ips
+mover/release/3-combine_patch/luma/titles/00040000000C9C00/code.ips
 ```
 
 To install a release, merge its `luma` directory into the root of the 3DS SD card and enable `Enable game patching` in the Luma3DS configuration. Luma3DS loads title IPS patches from `/luma/titles/<Title ID>/code.ips`.
