@@ -42,7 +42,7 @@ $(BUILD):
 $(BASE_OBJECT): patch.c | $(BUILD)
 	"$(CC)" $(CFLAGS) -DOfflinePatch_LoadBankData=OfflinePatch_LoadBankData_Base -c "$<" -o "$@"
 
-$(BULK_OBJECT): bulk_import.c | $(BUILD)
+$(BULK_OBJECT): bulk_import.c bulk_import.h | $(BUILD)
 	"$(CC)" $(CFLAGS) -c "$<" -o "$@"
 
 $(OBJECT): $(BASE_OBJECT) $(BULK_OBJECT)
