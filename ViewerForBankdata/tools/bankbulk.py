@@ -71,6 +71,19 @@ def cmd_build(args) -> int:
     return 0
 
 
+def cmd_apply_v0(args) -> int:
+    runtime = _load_current(args.runtime)
+    bulk = _load_current(args.bulk)
+    expected = runtime.apply_main_boxes_from(bulk).to_bytes()
+    _write(args.output, expected)
+    print(
+        f"wrote Route A V0 expected image: {args.output} "
+        f"(copied 0x{layout.BANK_BOXES_START:X}-0x{layout.TRANSFER_BOX_START:X}, "
+        "preserved all other runtime bytes)"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Pokemon Bank v1.5 Route A full-image and PKHeX-view helper"
@@ -104,6 +117,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", type=Path, required=True)
     p.set_defaults(func=cmd_build)
 
+    p = sub.add_parser(
+        "apply-v0",
+        help="simulate the 3DS V0 whitelist: main boxes from bulk, all other bytes from runtime",
+    )
+    p.add_argument("runtime", type=Path, help="current runtime/bankdata 0xBB518 image")
+    p.add_argument("bulk", type=Path, help="bulk_import.bin 0xBB518 image")
+    p.add_argument("-o", "--output", type=Path, required=True)
+    p.set_defaults(func=cmd_apply_v0)
+
     return parser
 
 
@@ -111,7 +133,7 @@ def main(argv=None) -> int:
     try:
         args = build_parser().parse_args(argv)
         return args.func(args)
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
