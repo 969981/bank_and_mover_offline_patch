@@ -20,11 +20,14 @@ RELEASE_TITLE := $(RELEASE_ROOT)/$(TITLE_ID)
 RELEASE_IPS := $(RELEASE_TITLE)/code.ips
 RELEASE_ROMFS := $(RELEASE_TITLE)/romfs
 ROMFS_SOURCE ?= $(TARGET_ROOT)/rom/romfs
+BASE_OBJECT := $(BUILD)/patch-base.o
+BULK_OBJECT := $(BUILD)/bulk_import.o
 OBJECT := $(BUILD)/patch.o
 DISASSEMBLY := $(BUILD)/patch.disasm.txt
 SYMBOLS := $(BUILD)/armips-symbols.txt
 
 CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
+LD := $(DEVKITARM)/bin/arm-none-eabi-ld
 OBJDUMP := $(DEVKITARM)/bin/arm-none-eabi-objdump
 CFLAGS := -std=c11 -Os -march=armv6k -mtune=mpcore -marm -mfloat-abi=soft \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables \
@@ -36,8 +39,14 @@ all: $(RELEASE_IPS) layeredfs verify
 $(BUILD):
 	mkdir -p "$@"
 
-$(OBJECT): patch.c | $(BUILD)
+$(BASE_OBJECT): patch.c | $(BUILD)
+	"$(CC)" $(CFLAGS) -DOfflinePatch_LoadBankData=OfflinePatch_LoadBankData_Base -c "$<" -o "$@"
+
+$(BULK_OBJECT): bulk_import.c | $(BUILD)
 	"$(CC)" $(CFLAGS) -c "$<" -o "$@"
+
+$(OBJECT): $(BASE_OBJECT) $(BULK_OBJECT)
+	"$(LD)" -r -o "$@" $(BASE_OBJECT) $(BULK_OBJECT)
 	"$(OBJDUMP)" -dr -z "$@" > "$(DISASSEMBLY)"
 
 $(PATCHED): FORCE main.s $(OBJECT) $(BASE)
