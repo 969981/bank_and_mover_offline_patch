@@ -13,9 +13,9 @@ import bank_v15_layout as layout
 import bankbulk
 
 
-def make_current_image(fill=False):
+def make_current_image(fill=False, seed=17):
     if fill:
-        data = bytearray((i * 17 + 3) & 0xFF for i in range(layout.CURRENT_SIZE))
+        data = bytearray((i * seed + 3) & 0xFF for i in range(layout.CURRENT_SIZE))
     else:
         data = bytearray(layout.CURRENT_SIZE)
     struct.pack_into("<HH", data, layout.VERSION_OFFSET, 2, 100)
@@ -58,6 +58,32 @@ class BankBulkCliTests(unittest.TestCase):
             src.write_bytes(raw)
             self.assertEqual(bankbulk.main(["build", str(src), "-o", str(dst)]), 0)
             self.assertEqual(dst.read_bytes(), raw)
+
+    def test_apply_v0_uses_bulk_boxes_and_runtime_metadata(self):
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td)
+            runtime_path = td / "runtime.bin"
+            bulk_path = td / "bulk_import.bin"
+            output_path = td / "expected.bin"
+            runtime = make_current_image(fill=True, seed=7)
+            bulk = make_current_image(fill=True, seed=23)
+            runtime_path.write_bytes(runtime)
+            bulk_path.write_bytes(bulk)
+
+            self.assertEqual(
+                bankbulk.main([
+                    "apply-v0", str(runtime_path), str(bulk_path),
+                    "-o", str(output_path),
+                ]),
+                0,
+            )
+            result = output_path.read_bytes()
+            self.assertEqual(result[:layout.BANK_BOXES_START], runtime[:layout.BANK_BOXES_START])
+            self.assertEqual(
+                result[layout.BANK_BOXES_START:layout.TRANSFER_BOX_START],
+                bulk[layout.BANK_BOXES_START:layout.TRANSFER_BOX_START],
+            )
+            self.assertEqual(result[layout.TRANSFER_BOX_START:], runtime[layout.TRANSFER_BOX_START:])
 
     def test_validate_and_inspect(self):
         with tempfile.TemporaryDirectory() as td:
