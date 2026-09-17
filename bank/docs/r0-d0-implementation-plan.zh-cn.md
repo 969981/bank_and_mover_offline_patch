@@ -30,11 +30,11 @@
 - Consumes: `0x002BA490 BankFile_LoadLegacyBody`、`0x00116294 BankFile_InitializeEmpty`、现有 Bank v1.5 文件地图。
 - Produces: legacy→current 的确定执行顺序、legacy 覆盖边界、current-only 区域的默认初始化结论，以及待动态验证项。
 
-- [ ] 记录 `0x002BA490` 的完整伪代码和对象/文件偏移换算。
-- [ ] 证明执行顺序为 current initializer → legacy prefix copy → version=2。
-- [ ] 标出 `0xACA44~0xACA47` 这个 legacy/current 4-byte 重叠窗口，禁止把 `0xACA48` 简化成 current 扩展区起点。
-- [ ] 从 `0x00116294` 提取 100×30 Bank slots、Transfer Box、tag、version/box count、source summaries、counter/source/timestamp/tail 的默认初始化行为。
-- [ ] 把“已确认”“由文件地图推导”“仍需动态验证”分开记录。
+- [x] 记录 `0x002BA490` 的完整伪代码和对象/文件偏移换算。
+- [x] 证明执行顺序为 current initializer → legacy prefix copy → version=2。
+- [x] 标出 `0xACA44~0xACA47` 这个 legacy/current 4-byte 重叠窗口，禁止把 `0xACA48` 简化成 current 扩展区起点。
+- [x] 从 `0x00116294` 提取 100×30 Bank slots、Transfer Box、tag、version/box count、source summaries、counter/source/timestamp/tail 的默认初始化行为。
+- [x] 把“已确认”“由文件地图推导”“仍需动态验证”分开记录。
 
 ### Task 2: D0 layout module — TDD
 
@@ -50,10 +50,10 @@
   - `region_for_offset(offset) -> str`
   - `validate_current(data) -> list[str]`
 
-- [ ] 先写测试：文件总长、所有区域首尾连续、Box 1/100 与 Slot 1/30 地址、tag/source/timestamp 与同一 slot index 对齐。
-- [ ] 运行测试并确认因 `bank_v15_layout` 尚不存在而失败。
-- [ ] 实现最小布局模块。
-- [ ] 运行测试至全部通过。
+- [x] 先写测试：文件总长、所有区域首尾连续、Box 1/100 与 Slot 1/30 地址、tag/source/timestamp 与同一 slot index 对齐。
+- [x] 运行测试并确认因 `bank_v15_layout` 尚不存在而失败。
+- [x] 实现最小布局模块。
+- [x] 运行测试至全部通过。
 
 ### Task 3: D0 structured diff — TDD
 
@@ -68,11 +68,11 @@
   - text report
   - optional JSON report
 
-- [ ] 先写合成镜像测试：只改一个 Pokémon byte 时归到正确 Box/Slot；只改 tag/source/timestamp 时归到同一 slot；aggregate/tail 修改归到独立 region。
-- [ ] 运行测试并确认失败原因是 diff 实现尚不存在。
-- [ ] 实现 slot-level change aggregation 和 region-level changed ranges。
-- [ ] 增加 CLI：`python diff_bank_file.py BEFORE AFTER [--json OUT] [--only-changed-slots]`。
-- [ ] 运行全部 tests。
+- [x] 先写合成镜像测试：只改一个 Pokémon byte 时归到正确 Box/Slot；只改 tag/source/timestamp 时归到同一 slot；aggregate/tail 修改归到独立 region。
+- [x] 运行测试并确认失败原因是 diff 实现尚不存在。
+- [x] 实现 slot-level change aggregation 和 region-level changed ranges。
+- [x] 增加 CLI：`python diff_bank_file.py BEFORE AFTER [--json OUT] [--only-changed-slots]`。
+- [x] 运行全部 tests。
 
 ### Task 4: 文档与使用说明
 
@@ -81,13 +81,17 @@
 - Modify: `ViewerForBankdata/tools/README.md`
 - Modify: `bank/docs/bank-v15-bulk-import-roadmap.zh-cn.md`
 
-- [ ] 增加 diff 工具命令示例。
+- [x] 增加 diff 工具命令示例。
 - [ ] 在 roadmap 中记录 R0/D0 当前状态和产物链接。
-- [ ] 明确工具不解释 tag/source/timestamp 的业务枚举，只报告 raw change；R1/R2/R3 再给语义。
+- [x] 明确工具不解释 tag/source/timestamp 的业务枚举，只报告 raw change；R1/R2/R3 再给语义。
 
 ### Task 5: Verification
 
-- [ ] `python -m unittest discover -s ViewerForBankdata/tests -v` 全通过。
-- [ ] 对合成 `0xBB518` before/after 镜像运行 CLI，确认文本和 JSON 都能生成。
-- [ ] 再次检查 legacy 文档中不存在把推断写成已确认值的问题。
-- [ ] 核对所有 offset 边界最终闭合到 `0xBB518`。
+- [x] `python -m unittest discover -s ViewerForBankdata/tests -v` 全通过。
+- [x] 对合成 `0xBB518` before/after 镜像运行 CLI，确认文本和 JSON 都能生成。
+- [x] 再次检查 legacy 文档中不存在把推断写成已确认值的问题。
+- [x] 核对所有 offset 边界最终闭合到 `0xBB518`。
+
+## 当前状态
+
+R0 静态分析与 D0 核心 diff 工具已经完成。roadmap 的状态回写未阻塞任何研究或代码路径；后续可在 R1/R2/R3 启动时统一更新 roadmap 的进度表。
