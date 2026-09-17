@@ -8,14 +8,14 @@
 #define BANK_V15_MAIN_BOX_END 0xAAF14u
 #define BANK_V15_MAIN_BOX_SIZE (BANK_V15_MAIN_BOX_END-BANK_V15_MAIN_BOX_START)
 
-static int BankBulk_ValidateHeader4(const unsigned char header[4])
+static inline int BankBulk_ValidateHeader4(const unsigned char header[4])
 {
     unsigned int version=(unsigned int)header[0]|((unsigned int)header[1]<<8);
     unsigned int boxCount=(unsigned int)header[2]|((unsigned int)header[3]<<8);
     return version==2u && boxCount==100u;
 }
 
-static void BankBulk_ApplyMainBoxes(unsigned char *runtimeBody,
+static inline void BankBulk_ApplyMainBoxes(unsigned char *runtimeBody,
     const unsigned char *bulkBody)
 {
     unsigned int offset;
