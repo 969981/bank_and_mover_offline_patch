@@ -19,6 +19,64 @@ Pokedex-like aggregate、counter、tail 等区域的变更范围。
 这些工具只报告 raw 值与物理变化；tag/source/timestamp 的业务枚举由后续研究确认，
 不会因为数值看起来合理就自动赋予业务名称。
 
+## Route A：完整镜像与 PKHeX 兼容视图
+
+`bankbulk.py` 用于完整 `0xBB518` Bank v1.5 镜像与 PKHeX `Bank7` 兼容视图之间的安全转换。
+完整镜像始终是主模板；PKHeX 兼容视图固定为 legacy 长度 `0xACA48`，只用于 PKHeX 查看/编辑。
+
+验证完整镜像：
+
+```powershell
+python .\tools\bankbulk.py validate "D:\Bank\bankdata.bin"
+python .\tools\bankbulk.py inspect "D:\Bank\bankdata.bin"
+```
+
+导出只用于 PKHeX 的兼容视图：
+
+```powershell
+python .\tools\bankbulk.py export-pkhex `
+  "D:\Bank\bankdata.bin" `
+  -o "D:\Bank\bankdata_pkhex_view.bin"
+```
+
+输出文件长度必须为：
+
+```text
+0xACA48 = 707144 bytes
+```
+
+PKHeX 编辑并保存这个兼容视图以后，不要把它直接作为 Bank v1.5 文件或上传对象。使用原始完整
+`bankdata.bin` 作为模板回灌：
+
+```powershell
+python .\tools\bankbulk.py import-pkhex `
+  "D:\Bank\bankdata.bin" `
+  "D:\Bank\bankdata_pkhex_view_edited.bin" `
+  -o "D:\Bank\bulk_import.bin"
+```
+
+回灌只复制：
+
+```text
+0x00017C .. 0x0AAF14 (end-exclusive)
+```
+
+也就是 100 个主 Bank Box（每盒 30×`0xE8` Pokémon + `0x26` box metadata）。以下区域会保留完整
+current template，不会从 PKHeX view 覆盖：
+
+- Header；
+- Transfer Box；
+- `0xACA44..0xACA47` legacy/current overlap；
+- current-format tag/source/timestamp 与后续 metadata。
+
+如果不经过 PKHeX，只需要从一个已校验的完整镜像生成 `bulk_import.bin`：
+
+```powershell
+python .\tools\bankbulk.py build `
+  "D:\Bank\bankdata.bin" `
+  -o "D:\Bank\bulk_import.bin"
+```
+
 运行测试：
 
 ```powershell
