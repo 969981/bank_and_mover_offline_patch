@@ -2,11 +2,13 @@
 """Route A helper CLI for Pokemon Bank v1.5 full-image workflows."""
 
 import argparse
+import json
 from pathlib import Path
 import struct
 import sys
 
 import bank_v15_layout as layout
+import diff_bank_file
 from bank_v15_image import BankV15Image
 
 
@@ -84,6 +86,83 @@ def cmd_apply_v0(args) -> int:
     return 0
 
 
+def verify_v0(runtime: bytes, bulk: bytes, saved: bytes) -> dict:
+    runtime_image = BankV15Image.from_bytes(runtime)
+    bulk_image = BankV15Image.from_bytes(bulk)
+    saved_image = BankV15Image.from_bytes(saved)
+    expected = runtime_image.apply_main_boxes_from(bulk_image).to_bytes()
+    saved_raw = saved_image.to_bytes()
+
+    start = layout.BANK_BOXES_START
+    end = layout.TRANSFER_BOX_START
+    main_boxes_match = saved_raw[start:end] == expected[start:end]
+    strict_match = saved_raw == expected
+    post_save_diff = diff_bank_file.compare_bank_images(expected, saved_raw)
+
+    outside_regions = {
+        name: info
+        for name, info in post_save_diff["regions"].items()
+        if name not in {"bank_slot_payload", "box_metadata"}
+    }
+    main_box_regions = {
+        name: info
+        for name, info in post_save_diff["regions"].items()
+        if name in {"bank_slot_payload", "box_metadata"}
+    }
+
+    return {
+        "format": "PokemonBankRouteAV0Verification",
+        "main_boxes_match_expected": main_boxes_match,
+        "strict_byte_match_expected": strict_match,
+        "main_box_mismatch_regions": main_box_regions,
+        "stock_or_runtime_metadata_changes": outside_regions,
+        "changed_byte_count_vs_expected": post_save_diff["changed_byte_count"],
+        "changed_slots_vs_expected": post_save_diff["changed_slots"],
+    }
+
+
+def cmd_verify_v0(args) -> int:
+    runtime = _load_current(args.runtime).to_bytes()
+    bulk = _load_current(args.bulk).to_bytes()
+    saved = _load_current(args.saved).to_bytes()
+    result = verify_v0(runtime, bulk, saved)
+
+    print("Pokemon Bank Route A V0 verification")
+    print(
+        "  main 100 boxes: "
+        + ("MATCH expected" if result["main_boxes_match_expected"] else "MISMATCH")
+    )
+    print(
+        "  full image: "
+        + ("byte-identical" if result["strict_byte_match_expected"] else "has post-save differences")
+    )
+    print(f"  changed bytes vs expected: {result['changed_byte_count_vs_expected']}")
+
+    outside = result["stock_or_runtime_metadata_changes"]
+    if outside:
+        print("  current-only / outside-box changes:")
+        for name, info in outside.items():
+            print(f"    {name}: {info['changed_bytes']} bytes")
+    else:
+        print("  current-only / outside-box changes: none")
+
+    if result["main_box_mismatch_regions"]:
+        print("  main-box mismatch regions:")
+        for name, info in result["main_box_mismatch_regions"].items():
+            print(f"    {name}: {info['changed_bytes']} bytes")
+
+    if args.json_output:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+    if args.strict:
+        return 0 if result["strict_byte_match_expected"] else 3
+    return 0 if result["main_boxes_match_expected"] else 3
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Pokemon Bank v1.5 Route A full-image and PKHeX-view helper"
@@ -125,6 +204,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("bulk", type=Path, help="bulk_import.bin 0xBB518 image")
     p.add_argument("-o", "--output", type=Path, required=True)
     p.set_defaults(func=cmd_apply_v0)
+
+    p = sub.add_parser(
+        "verify-v0",
+        help="verify a saved Offline image against Route A V0 expected main boxes",
+    )
+    p.add_argument("runtime", type=Path, help="bankdata before applying bulk")
+    p.add_argument("bulk", type=Path, help="bulk_import.bin used by the 3DS")
+    p.add_argument("saved", type=Path, help="bankdata copied back after Offline save/reload")
+    p.add_argument("--json", dest="json_output", type=Path, help="optional JSON report")
+    p.add_argument(
+        "--strict",
+        action="store_true",
+        help="require the entire saved image to be byte-identical to the V0 expected image",
+    )
+    p.set_defaults(func=cmd_verify_v0)
 
     return parser
 
