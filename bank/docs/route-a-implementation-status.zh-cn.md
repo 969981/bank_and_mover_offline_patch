@@ -1,6 +1,6 @@
 # Pokémon Bank Route A 当前实现状态
 
-本文记录 `research/saveboxes-transaction-analysis` 分支在 Route A 的实际完成度与验证证据。它用于区分“代码已实现/host 已验证”和“仍需 3DS/官方服务实测”的部分。
+本文记录 `research/saveboxes-transaction-analysis` 分支中 Route A 的实际完成度与验证证据，用于区分“代码/host 已验证”和“仍需 3DS/官方服务实测”的部分。
 
 ## 1. 当前目标
 
@@ -28,15 +28,13 @@ D6 Official Mode 仍保持关闭；在 Offline 闭环实机验证完成前，不
 - counters：raw `3C 00 00 00`，`<HH>` 视图为 `[60, 0]`；
 - tail：只有首字节 `1` 非零。
 
-V0 策略全部为：
+V0 对这些区域的策略全部为：
 
 ```text
 PRESERVE_RUNTIME
 ```
 
-即 source summaries、NKZT、counters、tail 不从 `bulk_import.bin` 覆盖。
-
-静态仓库搜索没有找到这些 runtime object 大偏移的直接文本引用；因此当前结论来自文件布局、真实 baseline 和 legacy migration 行为，不能宣称这些块的完整业务语义已经逆清。后续仍需原二进制/IDA xref 与 controlled before/after 实验。
+静态仓库搜索没有找到这些 runtime object 大偏移的直接文本引用，因此不能宣称它们的完整业务语义已经逆清；后续仍需原二进制/IDA xref 与 controlled before/after 实验。
 
 ## 3. 已完成：D1 BankV15Image
 
@@ -57,7 +55,7 @@ V0 唯一 COPY_FROM_BULK 区域：
 
 ## 4. 已完成：D2 bankbulk / PKHeX workflow
 
-支持：
+当前命令：
 
 ```text
 validate
@@ -66,6 +64,7 @@ export-pkhex
 import-pkhex
 build
 apply-v0
+verify-v0
 ```
 
 PKHeX 导出：
@@ -89,7 +88,7 @@ python .\tools\bankbulk.py import-pkhex `
 
 只回灌主 100 Box，不回灌 Header、Transfer Box、`0xACA44..0xACA47` overlap 或 current-only metadata。
 
-`apply-v0` 可以在 PC 上生成理论 runtime 结果，供 3DS 保存后比对：
+PC 侧生成理论 runtime：
 
 ```powershell
 python .\tools\bankbulk.py apply-v0 `
@@ -97,6 +96,18 @@ python .\tools\bankbulk.py apply-v0 `
   "D:\Bank\bulk_import.bin" `
   -o "D:\Bank\expected_after_apply.bin"
 ```
+
+3DS 保存后自动验收：
+
+```powershell
+python .\tools\bankbulk.py verify-v0 `
+  "D:\Bank\bankdata_before.bin" `
+  "D:\Bank\bulk_import.bin" `
+  "D:\Bank\bankdata_saved.bin" `
+  --json "D:\Bank\verify.json"
+```
+
+默认只要求主 100 Box 与 expected 完全一致；主 Box 外的 stock-save metadata 变化会单独报告，不会误判为 Bulk Apply 失败。`--strict` 可要求完整 `0xBB518` byte-identical。
 
 ## 5. 已完成：D3/D4 Offline Apply V0 实现
 
@@ -125,17 +136,17 @@ OfflinePatch_LoadBankData_Base
 7. Header、Transfer Box、tag/source/time、R4/R5/R6 区域保持 runtime 值；
 8. 若大块读取发生 short/error，重新调用原 proven loader 恢复完整 `bankdata.bin`，避免半应用对象进入 Bank UI。
 
-### 当前 V0 的行为
+### 当前 V0 行为
 
-- `bulk_import.bin` 缺失：正常 Offline Mode，不修改 runtime；
+- `bulk_import.bin` 缺失：正常 Offline Mode；
 - bulk 尺寸/头无效：不应用 bulk，继续使用原 bankdata；
 - bulk 有效：自动应用主 100 Box；
 - 不自动保存；
 - 不自动删除/重命名 bulk 文件；
-- 用户不保存退出时，原 `bankdata.bin` 不会被新内容替换；
+- 不保存退出时原 `bankdata.bin` 不会被新内容替换；
 - bulk 文件仍在时，下次启动会再次应用。
 
-第一版暂时没有 A/B 确认 UI，目标是先验证最小数据路径和保存闭环。
+第一版暂时没有 A/B 确认 UI，先验证最小数据路径和保存闭环。
 
 ## 6. 自动验证结果
 
@@ -144,7 +155,7 @@ OfflinePatch_LoadBankData_Base
 当前 Route A / D0-D5 相关测试：
 
 ```text
-31 tests
+35 tests
 0 failures
 ```
 
@@ -160,7 +171,9 @@ OfflinePatch_LoadBankData_Base
 - 1 slot；
 - 1 Box；
 - 10 Boxes；
-- 100 Boxes。
+- 100 Boxes；
+- saved-image `verify-v0`；
+- 默认验收与 `--strict` 的区分。
 
 ### Host C
 
@@ -188,7 +201,7 @@ wrapper object text 约 `0x21B` bytes。
 
 ### 真实 bankdata baseline
 
-上传的真实 `bankdata.bin` 已做：
+用户上传的真实 `bankdata.bin` 已做：
 
 ```text
 current full
@@ -212,55 +225,60 @@ runtime == bulk
 
 ## 7. 当前环境无法完成的验证
 
-当前执行环境没有 devkitARM，也没有仓库的原版 `00040000000C9B00.dec.code` 构建输入，因此没有在本会话生成最终 `code.ips`。
+当前执行环境没有 `arm-none-eabi-gcc` / devkitARM，也没有原版 `00040000000C9B00.dec.code` 构建输入，因此没有在本会话生成最终 `code.ips`。
 
-这意味着以下内容仍必须在本地完整工具链/3DS 上验证：
+仍必须在本地完整工具链/3DS 上验证：
 
 - arm-none-eabi-gcc + armips 最终链接后的 payload 是否仍位于 audited code cave；
 - `verify_patch.py` 全量通过；
-- 真实 Bank UI 是否能正确显示导入后的 Pokémon；
-- 原版离线 save state 是否能序列化并安装新 `bankdata.bin`；
+- 真实 Bank UI 是否正确显示导入后的 Pokémon；
+- 原版离线 save state 是否序列化并安装新 `bankdata.bin`；
 - restart + reload 是否保持预期主 Box；
 - tag/source/timestamp 陈旧值是否影响 UI、移动、保存或后续 HOME 语义。
 
-## 8. D5 实机验证清单
+## 8. D5 实机协议
 
-建议先使用当前 baseline 的干净测试槽（例如之前识别出的全零槽）逐级验证：
+完整协议：
+
+```text
+bank/docs/route-a-device-test-protocol.zh-cn.md
+```
+
+测试阶梯：
 
 ```text
 T0 no-op bulk
-T1 1 occupied -> empty
-T2 1 empty -> occupied
-T3 overwrite 1 slot
+T1 single occupied-slot overwrite
+T2 empty -> occupied
+T3 occupied -> empty
 T4 1 Box
 T5 10 Boxes
 T6 100 Boxes
 ```
 
-每次流程：
+每次核心流程：
 
 ```text
-备份 bankdata.bin / bankdata.bak
-    -> 生成 bulk_import.bin
-    -> 生成 expected_after_apply.bin
-    -> 放到 sd:/3ds/Bank/bulk_import.bin
-    -> Offline Mode 进入 Bank Box UI
-    -> 检查
-    -> 正常保存
-    -> 暂时移走 bulk_import.bin
-    -> restart
-    -> 重新进入 Offline Mode
-    -> 导出/取得 saved bankdata.bin
-    -> diff saved vs expected
+before
+ + bulk
+ -> expected
+ -> 3DS Offline apply
+ -> manual inspect
+ -> normal save
+ -> remove bulk_import.bin
+ -> restart/reload
+ -> saved bankdata
+ -> verify-v0
+ -> R4/R5/R6 diff
 ```
 
-特别注意：重启验证前必须先把 `bulk_import.bin` 移走，否则下一次启动会再次应用 bulk，无法证明保存后的 `bankdata.bin` 本身已经正确持久化。
+特别注意：重启验证前必须移走 `bulk_import.bin`，否则下一次启动会再次应用 bulk，无法证明保存后的 `bankdata.bin` 本身已经正确持久化。
 
 ## 9. D6 状态
 
 **尚未启用。**
 
-D6 只在上述 Offline 实机闭环通过后实施。第一轮只允许 1 Pokémon，并采用：
+D6 只在 Offline 实机闭环通过后实施。第一轮只允许 1 Pokémon：
 
 ```text
 server_before.bin
