@@ -4,15 +4,18 @@
 
 ## Official Bulk Sync（当前 feature 分支）
 
-- **[Official Bulk Sync 详细技术文档 V2](official-bank-bulk-sync-technical-v2.zh-cn.md)**：2026-09-19 修正版；说明 SM/USUM 存档列表消失的 `.data cave` 根因、单 Hook/native-state gate、Thumb RX text-tail payload、fresh backup、slot merge、metadata writer、verifier 与 D6H 在线验证计划。
+- **[Official Bulk Sync 详细技术文档 V3](official-bank-bulk-sync-technical-v3.zh-cn.md)**：2026-09-19 当前版本；记录 V2 `undefined instruction` 的 ARM/Thumb interworking relocation 根因、机器码证据、V3 command-buffer 参数传递、RX text-tail payload、静态边界与实机验证顺序。
+- [Official Bulk Sync 详细技术文档 V2](official-bank-bulk-sync-technical-v2.zh-cn.md)：记录上一阶段 `.data cave` 修复和单 Hook/native-state gate 架构；其中 Thumb→ARM `OfficialBulk_CommandBuffer` bridge 已在 V3 废弃。
 - [Official Bulk Sync 设计契约](official-bank-bulk-sync-design.zh-cn.md)：不可变只读 `bulk_import.bin`、data-only 输入、原版上传事务保持不变、HOME 排除等硬性设计约束。
 - [旧 V1 技术记录](official-bank-bulk-sync-technical.zh-cn.md)：保留作为开发历史；其中“双 Hook + data/scratch cave”已经被 V2 废弃，**不要再按 V1 构建或判断安全边界**。
 
-当前 `feature/official-bank-bulk-sync` 的修正版架构：
+当前 `feature/official-bank-bulk-sync` 的 V3 架构：
 
 ```text
 原版 Bank 联网/游戏识别
-→ BankDataSyncState_Update 原生状态判断
+→ BankDataSyncState_Update 单 Hook
+→ ARM dispatcher 直接获取 TLS / FS command buffer
+→ Thumb OfficialBulkSync_Process(state, commandBuffer)
 → fresh BankObject backup
 → 只读 bulk_import.bin
 → slot-aware Pokémon merge
@@ -21,7 +24,7 @@
 → 用户原版保存流程
 ```
 
-当前只修改一个原版执行点和真正的 RX text 尾部，不再向 mapped `.data` / BSS 写入代码。
+当前只修改一个原版执行点和真正的 RX text 尾部；不再向 mapped `.data` / BSS 写入代码，也不再生成 Thumb→ARM external helper relocation。
 
 **尚未完成的关键证据是官方服务器 Save → redownload round-trip。** 必须先从 1 Pokémon 开始验证，再扩大到 30 / 300 / 3000。
 
