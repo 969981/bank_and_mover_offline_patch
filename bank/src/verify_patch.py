@@ -312,7 +312,7 @@ def verify_code(base: Path, patched: Path, symbols_path: Path, ips: Path) -> Non
 
     for name in (
         "offlinepatch_optionalrewardbypassupdate",
-        "offlinepatch_loadbankdata",
+        "offlinepatch_loadbankdata_base",
         "offlinepatch_savedisplaydelayupdate",
         "offlinepatch_createinitial",
         "offlinepatch_stage",
@@ -322,6 +322,13 @@ def verify_code(base: Path, patched: Path, symbols_path: Path, ips: Path) -> Non
         address = symbols[name]
         if not payload_begin <= address < payload_end:
             raise ValueError(f"{name} is outside the imported local-file payload")
+
+    bulk_begin = symbols["combinepatch_bulkpayloadbegin"]
+    bulk_end = symbols["combinepatch_bulkpayloadend"]
+    if not TAIL_CAVE_START <= bulk_begin < bulk_end <= TAIL_CAVE_END:
+        raise ValueError("Bulk Import payload is outside the executable tail cave")
+    if not bulk_begin <= symbols["offlinepatch_loadbankdata"] < bulk_end:
+        raise ValueError("offlinepatch_loadbankdata is outside the Bulk Import payload")
 
     hook_branches = (
         (0x002B1AD0, "combinepatch_titlescreenupdate", False, ARM_COND_AL, "title input and session latch"),

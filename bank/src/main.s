@@ -365,6 +365,14 @@ CombinePatch_BankDataSyncEntry:
     pop {r4,pc}
     .pool
 
+// Keep the Bulk Import wrapper separate from the common local-file payload.
+// patch-base.o nearly fills the OptionalReward cave by itself, while this
+// smaller object fits in the verified tail-cave gap before the fixed paths.
+.align 4
+CombinePatch_BulkPayloadBegin:
+    .importobj "../build/bulk_import.o"
+CombinePatch_BulkPayloadEnd:
+
 // Keep broken-file paths outside the imported C payload.
 // 将损坏文件路径放到导入 C 载荷之外。
 .org 0x00313F80
@@ -974,7 +982,7 @@ CombinePatch_DownloadCaptureTrampoline:
 .org CombinePatch_PayloadStart
 .area CombinePatch_PayloadEndLimit-CombinePatch_PayloadStart
 CombinePatch_PayloadBegin:
-    .importobj "../build/patch.o"
+    .importobj "../build/patch-base.o"
 CombinePatch_PayloadEnd:
 .endarea
 
