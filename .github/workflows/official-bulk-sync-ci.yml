@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - feature/official-bank-bulk-sync
+      - feature/official-bank-bulk-sync-skip-mileage
     paths:
       - bank/src/official_bulk_sync.c
       - bank/src/official_bulk_sync_core.c
       - bank/src/official_bulk_sync.h
       - bank/src/official_bulk_sync_prod.c
       - bank/src/official_bulk_sync_host_test.c
+      - bank/src/skip_mileage_contract_test.py
       - bank/src/main_official.s
       - bank/src/Makefile
       - bank/src/verify_official_bulk_sync.py
@@ -21,6 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Run skip-mileage source contract test
+        run: python3 bank/src/skip_mileage_contract_test.py
 
       - name: Install ARM compiler
         run: |
