@@ -4,7 +4,8 @@
 
 ## Official Bulk Sync（当前 feature 分支）
 
-- **[Official Bulk Sync 详细技术文档 V3](official-bank-bulk-sync-technical-v3.zh-cn.md)**：2026-09-19 当前版本；记录 V2 `undefined instruction` 的 ARM/Thumb interworking relocation 根因、机器码证据、V3 command-buffer 参数传递、RX text-tail payload、静态边界与实机验证顺序。
+- **[Official Bulk Sync V3 原理解析与端到端技术说明](official-bank-bulk-sync-principles-v3.zh-cn.md)**：从原版 state gate、ARM/Thumb dispatcher、fresh BankObject 备份、只读 bulk、slot-aware metadata writer、原版 Save/Upload 到 H0/H1 round-trip 的完整工作原理与维护规则。
+- **[Official Bulk Sync 详细技术文档 V3](official-bank-bulk-sync-technical-v3.zh-cn.md)**：2026-09-19 当前版本；重点记录 V2 `undefined instruction` 的 ARM/Thumb interworking relocation 根因、机器码证据、V3 command-buffer 参数传递、RX text-tail payload、静态边界与实机验证顺序。
 - [Official Bulk Sync 详细技术文档 V2](official-bank-bulk-sync-technical-v2.zh-cn.md)：记录上一阶段 `.data cave` 修复和单 Hook/native-state gate 架构；其中 Thumb→ARM `OfficialBulk_CommandBuffer` bridge 已在 V3 废弃。
 - [Official Bulk Sync 设计契约](official-bank-bulk-sync-design.zh-cn.md)：不可变只读 `bulk_import.bin`、data-only 输入、原版上传事务保持不变、HOME 排除等硬性设计约束。
 - [旧 V1 技术记录](official-bank-bulk-sync-technical.zh-cn.md)：保留作为开发历史；其中“双 Hook + data/scratch cave”已经被 V2 废弃，**不要再按 V1 构建或判断安全边界**。
