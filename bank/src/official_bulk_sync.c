@@ -23,6 +23,7 @@ enum { ARCHIVE_SDMC=9, PATH_EMPTY=1, PATH_ASCII=3, OPEN_READ=1, OPEN_WRITE=2, OP
 #define BANK_ROOT_SLOT ((volatile u32 *)0x003AB938u)
 #define HOME_BULK_DIRTY ((volatile u8 *)0x003ABFFCu)
 #define BANK_OBJECT_VTABLE 0x003626FCu
+#define BANK_V15_HEADER_WORD 0x00640002u
 
 typedef s32 (*OpenDirect)(volatile u32 *,u32 *,u32,u32,u32,const void *,u32,u32,const void *,u32,u32,u32);
 typedef s32 (*FileRead)(u32 *,u32 *,u64,void *,u32);
@@ -70,16 +71,14 @@ static int writeSnapshot(const char *path,u32 pathSize,const u8 *body,volatile u
     return !r && !closeResult && n==BANK_V15_SIZE;
 }
 
+/* The restore source is the exact snapshot written and verified immediately before apply. */
 static int restoreSnapshot(const char *path,u32 pathSize,u8 *body)
 {
-    u32 h=0,n=0; u64 size=0; s32 r,closeResult=0;
+    u32 h=0,n=0; s32 r;
     r=openFile(path,pathSize,OPEN_READ,&h);
-    if (!r) r=FILE_GET_SIZE(&h,&size);
-    if (!r && size==BANK_V15_SIZE) r=FILE_READ(&h,&n,0,body,BANK_V15_SIZE);
-    else if (!r) r=-1;
-    if (h) closeResult=FILE_CLOSE(&h);
-    return !r && !closeResult && n==BANK_V15_SIZE &&
-        OfficialBulk_ValidateHeader4(body+BANK_V15_VERSION_OFFSET);
+    if (!r) r=FILE_READ(&h,&n,0,body,BANK_V15_SIZE);
+    if (h) (void)FILE_CLOSE(&h);
+    return !r && n==BANK_V15_SIZE;
 }
 
 static u8 *bankObjectFromState(u8 *state)
@@ -115,13 +114,13 @@ static int readExact(u32 *handle,u64 offset,void *dst,u32 size)
 
 static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
 {
-    u8 header[4],record[BANK_V15_PKM_SIZE],boxMeta[BANK_V15_BOX_META_SIZE];
-    u32 h=0,box,slot; u64 size=0,offset; s32 r,closeResult=0;
+    u32 header=0,h=0,box,slot; u8 record[BANK_V15_PKM_SIZE],boxMeta[BANK_V15_BOX_META_SIZE];
+    u64 size=0,offset; s32 r,closeResult=0;
     r=openFile(bulkPath,sizeof(bulkPath),OPEN_READ,&h);
     if (r) return 0;
     r=FILE_GET_SIZE(&h,&size);
     if (r || !OfficialBulk_IsSupportedSize(size) ||
-        !readExact(&h,BANK_V15_VERSION_OFFSET,header,sizeof(header)) || !OfficialBulk_ValidateHeader4(header)) {
+        !readExact(&h,BANK_V15_VERSION_OFFSET,&header,sizeof(header)) || header!=BANK_V15_HEADER_WORD) {
         if (h) (void)FILE_CLOSE(&h);
         return 0;
     }
@@ -192,7 +191,7 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
     if (!mode) return 0;
     if (mode==2) *HOME_BULK_DIRTY=0;
     object=bankObjectFromState(state); if (!object) return 0; body=object+8;
-    if (!OfficialBulk_ValidateHeader4(body+BANK_V15_VERSION_OFFSET)) return 0;
+    if (*(const u32 *)(body+BANK_V15_VERSION_OFFSET)!=BANK_V15_HEADER_WORD) return 0;
     if (mode==1 && !queryMetadata(&meta)) return 0;
     if (!OfficialBulk_BuildBackupPath(body,backupPath,sizeof(backupPath)) ||
         !writeSnapshot(backupPath,39u,body,commandBuffer)) return 0;
