@@ -147,7 +147,6 @@ static int readExact(u32 *handle,u64 offset,void *dst,u32 size)
     return !FILE_READ(handle,&n,offset,dst,size) && n==size;
 }
 
-/* 1=applied, 0=no valid bulk input, -1=runtime may be partially modified. */
 static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
 {
     u8 header[4],record[BANK_V15_PKM_SIZE],boxMeta[BANK_V15_BOX_META_SIZE];
@@ -184,7 +183,7 @@ __attribute__((used,noinline,section(".text.official")))
 int OfficialBulkSync_Process(void *stateVoid)
 {
     u8 *state=(u8 *)stateVoid,*flow,*object,*body;
-    OfficialBulkMetadata meta;
+    OfficialBulkMetadata meta={0u,0u,0u};
     char backupPath[48];
     unsigned profile=0,sec=0;
     int applyResult,haveMeta;
