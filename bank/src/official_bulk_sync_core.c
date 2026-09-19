@@ -36,18 +36,14 @@ OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned
     unsigned char *dst;
     unsigned i,index;
     int changed=0;
-    if (!runtimeBody || !bulkRecord || box>=BANK_V15_BOX_COUNT ||
-        slot>=BANK_V15_SLOTS_PER_BOX) return 0;
+    if (!runtimeBody || !bulkRecord || box>=BANK_V15_BOX_COUNT || slot>=BANK_V15_SLOTS_PER_BOX) return 0;
     dst=runtimeSlot(runtimeBody,box,slot);
     for (i=0;i<BANK_V15_PKM_SIZE;i++) if (dst[i]!=bulkRecord[i]) { changed=1; break; }
     if (!changed) return 1;
     for (i=0;i<BANK_V15_PKM_SIZE;i++) dst[i]=bulkRecord[i];
     if (OfficialBulk_RecordIsEmpty(bulkRecord)) return 1;
     index=box*BANK_V15_SLOTS_PER_BOX+slot;
-    if (!meta) {
-        runtimeBody[BANK_V15_TAG_START+index]=1u;
-        return 1;
-    }
+    if (!meta) { runtimeBody[BANK_V15_TAG_START+index]=1u; return 1; }
     runtimeBody[BANK_V15_TAG_START+index]=meta->formatTag;
     runtimeBody[BANK_V15_SOURCE_START+index]=meta->sourceSoftware;
     writeU64LE(runtimeBody+BANK_V15_TIMESTAMP_START+index*8u,meta->timestamp);
@@ -57,8 +53,7 @@ OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned
 OFFICIAL_BULK_API void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,unsigned box,
     const unsigned char bulkMeta[BANK_V15_BOX_META_SIZE])
 {
-    unsigned i;
-    unsigned char *dst;
+    unsigned i; unsigned char *dst;
     if (!runtimeBody || !bulkMeta || box>=BANK_V15_BOX_COUNT) return;
     dst=runtimeBody+BANK_V15_MAIN_BOX_START+box*BANK_V15_BOX_STRIDE+BANK_V15_BOX_PKM_BYTES;
     for (i=0;i<BANK_V15_BOX_META_SIZE;i++) dst[i]=bulkMeta[i];
@@ -68,52 +63,60 @@ OFFICIAL_BULK_API void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,u
 OFFICIAL_BULK_API int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,const unsigned char *bulkBody,
     unsigned long long bulkSize,const OfficialBulkMetadata *meta)
 {
-    unsigned box,slot;
-    const unsigned char *src;
+    unsigned box,slot; const unsigned char *src;
     if (!runtimeBody || !bulkBody || !OfficialBulk_IsSupportedSize(bulkSize)) return 0;
     if (!OfficialBulk_ValidateHeader4(bulkBody+BANK_V15_VERSION_OFFSET)) return 0;
     for (box=0;box<BANK_V15_BOX_COUNT;box++) {
         src=bulkBody+BANK_V15_MAIN_BOX_START+box*BANK_V15_BOX_STRIDE;
-        for (slot=0;slot<BANK_V15_SLOTS_PER_BOX;slot++) {
-            if (!OfficialBulk_MergeSlot(runtimeBody,box,slot,
-                src+slot*BANK_V15_PKM_SIZE,meta)) return 0;
-        }
+        for (slot=0;slot<BANK_V15_SLOTS_PER_BOX;slot++)
+            if (!OfficialBulk_MergeSlot(runtimeBody,box,slot,src+slot*BANK_V15_PKM_SIZE,meta)) return 0;
         OfficialBulk_CopyBoxMetadata(runtimeBody,box,src+BANK_V15_BOX_PKM_BYTES);
     }
     return 1;
+}
+
+OFFICIAL_BULK_API int OfficialBulk_HomeCommitAction(unsigned substate,unsigned dirty,
+    unsigned callbackStatus,unsigned specialFlag)
+{
+    if (!dirty || substate==0u) return OFFICIAL_HOME_COMMIT_NATIVE;
+    if (dirty==2u) {
+        if (substate==2u && callbackStatus) return OFFICIAL_HOME_COMMIT_FINISH_ERROR;
+        return OFFICIAL_HOME_COMMIT_NATIVE;
+    }
+    if (substate==1u) return OFFICIAL_HOME_COMMIT_START_STAGE;
+    if (substate==0x80u) {
+        if (!callbackStatus) return OFFICIAL_HOME_COMMIT_WAIT;
+        return specialFlag?OFFICIAL_HOME_COMMIT_FALLBACK_ROLLBACK:OFFICIAL_HOME_COMMIT_START_COMMIT;
+    }
+    if (substate==0x81u) {
+        if (!callbackStatus) return OFFICIAL_HOME_COMMIT_WAIT;
+        return specialFlag?OFFICIAL_HOME_COMMIT_FALLBACK_ROLLBACK:OFFICIAL_HOME_COMMIT_FINISH_SUCCESS;
+    }
+    return OFFICIAL_HOME_COMMIT_FINISH_ERROR;
 }
 #endif
 
 static char digit(unsigned value) { return (char)('0'+value); }
 static unsigned takeDigit(unsigned *value,unsigned place)
 {
-    unsigned d=0;
-    while (*value>=place) { *value-=place; d++; }
-    return d;
+    unsigned d=0; while (*value>=place) { *value-=place; d++; } return d;
 }
-static void put2(char *p,unsigned value)
-{
-    p[0]=digit(takeDigit(&value,10u)); p[1]=digit(value);
-}
+static void put2(char *p,unsigned value) { p[0]=digit(takeDigit(&value,10u)); p[1]=digit(value); }
 static void put4(char *p,unsigned value)
 {
-    p[0]=digit(takeDigit(&value,1000u));
-    p[1]=digit(takeDigit(&value,100u));
-    p[2]=digit(takeDigit(&value,10u));
-    p[3]=digit(value);
+    p[0]=digit(takeDigit(&value,1000u)); p[1]=digit(takeDigit(&value,100u));
+    p[2]=digit(takeDigit(&value,10u)); p[3]=digit(value);
 }
 
 OFFICIAL_BULK_API int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize)
 {
-    static const char prefix[]="/3ds/Bank/bankdata_";
-    static const char suffix[]=".bin";
+    static const char prefix[]="/3ds/Bank/bankdata_"; static const char suffix[]=".bin";
     unsigned i,pos=0,year,month,day,hour,minute,second;
     if (!runtimeBody || !out || outSize<39u) return 0;
     year=(unsigned)runtimeBody[0x160]|((unsigned)runtimeBody[0x161]<<8);
     month=runtimeBody[0x162]; day=runtimeBody[0x163]; hour=runtimeBody[0x164];
     minute=runtimeBody[0x165]; second=runtimeBody[0x166];
-    if (year>9999u || month<1u || month>12u || day<1u || day>31u ||
-        hour>23u || minute>59u || second>59u) return 0;
+    if (year>9999u || month<1u || month>12u || day<1u || day>31u || hour>23u || minute>59u || second>59u) return 0;
     for (i=0;i<sizeof(prefix)-1u;i++) out[pos++]=prefix[i];
     put4(out+pos,year); pos+=4; put2(out+pos,month); pos+=2; put2(out+pos,day); pos+=2;
     out[pos++]='_'; put2(out+pos,hour); pos+=2; put2(out+pos,minute); pos+=2; put2(out+pos,second); pos+=2;
@@ -132,23 +135,4 @@ OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned
 {
     if (substate!=2u || callbackStatus!=1u || specialFlag>1u) return 0;
     return specialFlag?2:1;
-}
-
-OFFICIAL_BULK_API int OfficialBulk_HomeCommitAction(unsigned substate,unsigned dirty,
-    unsigned callbackStatus,unsigned specialFlag)
-{
-    if (!dirty || substate==0u) return OFFICIAL_HOME_COMMIT_NATIVE;
-    if (substate==1u) return OFFICIAL_HOME_COMMIT_START_STAGE;
-    if (substate==0x80u) {
-        if (!callbackStatus) return OFFICIAL_HOME_COMMIT_WAIT;
-        return specialFlag?OFFICIAL_HOME_COMMIT_START_ROLLBACK:OFFICIAL_HOME_COMMIT_START_COMMIT;
-    }
-    if (substate==0x81u) {
-        if (!callbackStatus) return OFFICIAL_HOME_COMMIT_WAIT;
-        return specialFlag?OFFICIAL_HOME_COMMIT_START_ROLLBACK:OFFICIAL_HOME_COMMIT_FINISH_SUCCESS;
-    }
-    if (substate==0x82u) {
-        return callbackStatus?OFFICIAL_HOME_COMMIT_FINISH_ERROR:OFFICIAL_HOME_COMMIT_WAIT;
-    }
-    return OFFICIAL_HOME_COMMIT_FINISH_ERROR;
 }
