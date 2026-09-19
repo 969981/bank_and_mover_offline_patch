@@ -22,7 +22,7 @@ PROD_OBJECT := $(BUILD)/official_bulk_sync_prod.o
 SYMBOLS := $(BUILD)/official-armips-symbols.txt
 
 CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
-CFLAGS := -std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft \
+CFLAGS := -std=c11 -Oz -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables \
 	-fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common \
 	-ffunction-sections -fdata-sections -Wall -Wextra -Werror

@@ -3,14 +3,20 @@ import argparse, hashlib, pathlib
 
 BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
+TEXT_TAIL = (0x00313910,0x00314000)
 ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
-    (0x00313910,0x00314000,"official RX text-tail payload"),
+    (0x002AFE94,0x002AFE98,"HomeRollbackState_Update hook"),
+    (*TEXT_TAIL,"official RX text-tail payload"),
 ]
-CAVES = [(0x00313910,0x00314000)]
+CAVES = [TEXT_TAIL]
 EXPECTED_SYMBOLS = {
     "officialbulk_bankdatasyncdispatch":0x00313910,
-    "officialbulksync_process":0x003139D4,
+}
+REQUIRED_TAIL_SYMBOLS = {
+    "officialbulk_homecommitdispatch",
+    "officialbulksync_process",
+    "officialbulkhomecommit_process",
 }
 FORBIDDEN_SYMBOLS = {
     "officialbulk_commandbuffer",
@@ -62,15 +68,20 @@ def main():
         addr=CODE_BASE+i
         assert any(s<=addr<e for s,e,_ in ALLOWED), f"unexpected patched byte at {addr:08X}"
     assert addr_slice(base,0x002AF460,0x002AF464)!=addr_slice(patched,0x002AF460,0x002AF464)
+    assert addr_slice(base,0x002AFE94,0x002AFE98)!=addr_slice(patched,0x002AFE94,0x002AFE98)
     assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
         "official-only patch must not modify mapped data/BSS image"
     syms=read_symbols(args.symbols)
     for name,addr in EXPECTED_SYMBOLS.items():
         assert syms.get(name)==addr, f"symbol {name} expected {addr:08X}, got {syms.get(name)}"
+    for name in REQUIRED_TAIL_SYMBOLS:
+        addr=syms.get(name)
+        assert addr is not None, f"required symbol missing: {name}"
+        assert TEXT_TAIL[0] <= addr < TEXT_TAIL[1], f"symbol {name} escaped RX tail: {addr:08X}"
     for name in FORBIDDEN_SYMBOLS:
         assert name not in syms, f"forbidden cross-ISA helper symbol present: {name}"
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
-    print("official bulk sync static verification passed")
+    print("official HOME-direct bulk sync static verification passed")
 
 if __name__=="__main__": main()
