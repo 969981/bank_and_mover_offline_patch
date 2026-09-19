@@ -17,22 +17,31 @@
 #define BANK_V15_SOURCE_START 0xB4AA0u
 #define BANK_V15_TIMESTAMP_START 0xB5658u
 
+#ifdef OFFICIAL_BULK_INTERNAL
+#define OFFICIAL_BULK_API static
+#else
+#define OFFICIAL_BULK_API
+#endif
+
 typedef struct {
     unsigned char formatTag;
     unsigned char sourceSoftware;
     unsigned long long timestamp;
 } OfficialBulkMetadata;
 
-int OfficialBulk_IsSupportedSize(unsigned long long size);
-int OfficialBulk_ValidateHeader4(const unsigned char header[4]);
-int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE]);
-int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned box,unsigned slot,
+OFFICIAL_BULK_API int OfficialBulk_IsSupportedSize(unsigned long long size);
+OFFICIAL_BULK_API int OfficialBulk_ValidateHeader4(const unsigned char header[4]);
+OFFICIAL_BULK_API int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE]);
+OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned box,unsigned slot,
     const unsigned char bulkRecord[BANK_V15_PKM_SIZE],const OfficialBulkMetadata *meta);
-void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,unsigned box,
+OFFICIAL_BULK_API void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,unsigned box,
     const unsigned char bulkMeta[BANK_V15_BOX_META_SIZE]);
-int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,const unsigned char *bulkBody,
+#ifndef OFFICIAL_BULK_RUNTIME
+OFFICIAL_BULK_API int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,const unsigned char *bulkBody,
     unsigned long long bulkSize,const OfficialBulkMetadata *meta);
-int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize);
-unsigned char OfficialBulk_FormatTagForProfile(unsigned profileId);
+#endif
+OFFICIAL_BULK_API int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize);
+OFFICIAL_BULK_API unsigned char OfficialBulk_FormatTagForProfile(unsigned profileId);
+OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned callbackStatus,unsigned specialFlag);
 
 #endif
