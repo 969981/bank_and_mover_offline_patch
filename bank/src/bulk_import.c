@@ -52,7 +52,7 @@ static int applyBulkMainBoxes(u8 *runtimeBody)
     if (result) return 0;
 
     result=FILE_GET_SIZE(&handle,&size);
-    if (!result && size==BANK_V15_SIZE)
+    if (!result && BankBulk_IsSupportedInputSize(size))
         result=FILE_READ(&handle,&readCount,BANK_V15_VERSION_OFFSET,header,sizeof(header));
     else if (!result)
         result=-1;
