@@ -12,11 +12,23 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout current research branch
+        uses: actions/checkout@v4
+
+      - name: Install ARM binutils/compiler
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
+
       - name: Build armips v0.11.0
         shell: bash
         run: |
           set -euxo pipefail
           git clone --recursive --branch v0.11.0 --depth 1 https://github.com/Kingcom/armips.git "$RUNNER_TEMP/armips"
+          # v0.11.0 relied on a transitive <limits> include that GCC 13 no longer provides.
+          sed -i '1i#include <limits>' "$RUNNER_TEMP/armips/Core/ExpressionFunctions.cpp"
           cmake -S "$RUNNER_TEMP/armips" -B "$RUNNER_TEMP/armips/build" -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/armips/build"
 
@@ -27,22 +39,53 @@ jobs:
           git clone --depth 1 https://github.com/Alcaro/Flips.git "$RUNNER_TEMP/flips"
           make -C "$RUNNER_TEMP/flips" TARGET=cli CFLAGS=-O2
 
-      - name: Collect tools
+      - name: Build 3dstool
         shell: bash
         run: |
           set -euxo pipefail
-          mkdir -p "$RUNNER_TEMP/tools-out"
-          cp "$RUNNER_TEMP/armips/build/armips" "$RUNNER_TEMP/tools-out/armips"
-          cp "$RUNNER_TEMP/flips/flips" "$RUNNER_TEMP/tools-out/flips"
-          chmod +x "$RUNNER_TEMP/tools-out/armips" "$RUNNER_TEMP/tools-out/flips"
-          "$RUNNER_TEMP/tools-out/armips" 2>&1 | head -20 || true
-          "$RUNNER_TEMP/tools-out/flips" --help | head -20
-          sha256sum "$RUNNER_TEMP/tools-out/armips" "$RUNNER_TEMP/tools-out/flips"
+          git clone --recursive --depth 1 https://github.com/dnasdw/3dstool.git "$RUNNER_TEMP/3dstool"
+          cmake -S "$RUNNER_TEMP/3dstool" -B "$RUNNER_TEMP/3dstool/build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD64=ON
+          cmake --build "$RUNNER_TEMP/3dstool/build"
+          test -x "$RUNNER_TEMP/3dstool/bin/Release/3dstool"
+
+      - name: Build Bank ARM relocatable payload object
+        shell: bash
+        run: |
+          set -euxo pipefail
+          DEVKITARM_SHIM="$RUNNER_TEMP/devkitARM"
+          mkdir -p "$DEVKITARM_SHIM/bin"
+          for tool in gcc ld objdump; do
+            ln -s "$(command -v arm-none-eabi-$tool)" "$DEVKITARM_SHIM/bin/arm-none-eabi-$tool"
+          done
+          make -C bank/src DEVKITARM="$DEVKITARM_SHIM" ../build/patch.o
+          file bank/build/patch.o
+          arm-none-eabi-objdump -h bank/build/patch.o
+
+      - name: Collect tools and source workspace
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT="$RUNNER_TEMP/bank-build-helper"
+          mkdir -p "$OUT/tools" "$OUT/source"
+          cp "$RUNNER_TEMP/armips/build/armips" "$OUT/tools/armips"
+          cp "$RUNNER_TEMP/flips/flips" "$OUT/tools/flips"
+          cp "$RUNNER_TEMP/3dstool/bin/Release/3dstool" "$OUT/tools/3dstool"
+          chmod +x "$OUT/tools/armips" "$OUT/tools/flips" "$OUT/tools/3dstool"
+          cp -a bank "$OUT/source/bank"
+          cp -a ViewerForBankdata "$OUT/source/ViewerForBankdata"
+          cp -a release "$OUT/source/release"
+          # The checked-in rom directory contains no copyrighted base code; keep it as a destination skeleton only.
+          rm -rf "$OUT/source/bank/rom/exefs" "$OUT/source/bank/rom/romfs"
+          mkdir -p "$OUT/source/bank/rom/exefs" "$OUT/source/bank/rom/romfs"
+          "$OUT/tools/armips" 2>&1 | head -20 || true
+          "$OUT/tools/flips" --help | head -20
+          "$OUT/tools/3dstool" -h | head -30 || true
+          sha256sum "$OUT/tools/armips" "$OUT/tools/flips" "$OUT/tools/3dstool" "$OUT/source/bank/build/patch.o"
 
       - name: Upload Linux build helpers
         uses: actions/upload-artifact@v4
         with:
-          name: bank-linux-build-tools
-          path: ${{ runner.temp }}/tools-out/
+          name: bank-linux-build-helper
+          path: ${{ runner.temp }}/bank-build-helper/
           if-no-files-found: error
           retention-days: 1
