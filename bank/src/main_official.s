@@ -4,75 +4,43 @@
 
 .include "../include/symbol.inc"
 
-// Official-only Route A bulk sync. The stock title/menu/network/save/HOME flow
-// remains untouched. We only mark a successful ordinary Bank download and
-// consume that mark on the following BankDataSync update.
-.definelabel OfficialBulk_RuntimeStart, 0x00313910
-.definelabel OfficialBulk_RuntimeEnd,   0x00314008
-.definelabel OfficialBulk_CoreStart,    0x003ABA90
-.definelabel OfficialBulk_CoreEnd,      0x003ABFFC
-.definelabel OfficialBulk_Scratch,      0x003ABFFC
+// Official-only bulk sync. Keep every executable byte inside the real RX text
+// tail padding. No .data/BSS region is repurposed as code or scratch storage.
+.definelabel OfficialBulk_CodeStart, TextActualEnd
+.definelabel OfficialBulk_CodeEnd,   TextMappedEnd
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
 
-.org BankRemote_DownloadSuccessCallback + 0x14
-    bl OfficialBulk_DownloadMarkerTrampoline
-
+// Run before the stock state machine consumes its native callback status byte.
 .org BankDataSyncState_Update
     b OfficialBulk_BankDataSyncDispatch
 
-.org OfficialBulk_RuntimeStart
-.area OfficialBulk_RuntimeEnd-OfficialBulk_RuntimeStart
+.org OfficialBulk_CodeStart
+.area OfficialBulk_CodeEnd-OfficialBulk_CodeStart
+.arm
 
-// Callback +0x14 originally loads r8 with the complete serialized-object size.
-// Preserve flags and registers, mark only the ordinary game-linked download
-// ([r4+0x41] == 0), then replay that overwritten instruction.
-OfficialBulk_DownloadMarkerTrampoline:
-    push {r0-r3,r12,lr}
-    sub sp,sp,#8
-    mrs r12,cpsr
-    str r12,[sp]
-    ldrb r0,[r4,#0x41]
-    cmp r0,#0
-    bne @@restoreMarker
-    ldr r1,=OfficialBulk_Scratch
-    mov r0,#1
-    strb r0,[r1]
-@@restoreMarker:
-    ldr r12,[sp]
-    msr cpsr_f,r12
-    add sp,sp,#8
-    pop {r0-r3,r12,lr}
-    ldr r8,=0x000BB528
-    bx lr
-    .pool
-
-// Replay the native BankDataSyncState_Update prologue. When the ordinary
-// download marker is set, consume it once, synchronously snapshot the fresh
-// server BankObject, apply bulk_import.bin if valid, then continue native state
-// processing in the same frame.
+// The native BankDataSync state already tells us exactly when an ordinary
+// game-linked Bank download finished: substate==2, callbackStatus==1 and
+// specialFlag==0. The Thumb runtime checks those fields itself, so no global
+// pending marker and no download-callback hook are needed.
 OfficialBulk_BankDataSyncDispatch:
     push {r4-r6,lr}
     mov r4,r0
-    ldr r5,=OfficialBulk_Scratch
-    ldrb r6,[r5]
-    cmp r6,#0
-    beq @@native
-    mov r6,#0
-    strb r6,[r5]
+    ldr r12,=OfficialBulkSync_Process+1
+    blx r12
     mov r0,r4
-    bl OfficialBulkSync_Process
-    mov r0,r4
-@@native:
     b BankDataSyncState_Update + 4
     .pool
 
-    .importobj "../build/official_bulk_sync.o"
-.endarea
+// ARMv6K Thumb code cannot issue the CP15 TLS MRC used by the raw FS IPC helper.
+// Keep this three-instruction bridge in ARM and call it through interworking.
+OfficialBulk_CommandBuffer:
+    mrc p15,0,r0,c13,c0,3
+    add r0,r0,#0x80
+    bx lr
 
-.org OfficialBulk_CoreStart
-.area OfficialBulk_CoreEnd-OfficialBulk_CoreStart
-    .importobj "../build/official_bulk_sync_core.o"
+.align 2
+    .importobj "../build/official_bulk_sync_prod.o"
 .endarea
 
 .close
