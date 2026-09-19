@@ -11,26 +11,26 @@ static void writeU64LE(unsigned char *p,unsigned long long v)
     for (i=0;i<8u;i++) { p[i]=(unsigned char)v; v>>=8; }
 }
 
-int OfficialBulk_IsSupportedSize(unsigned long long size)
+OFFICIAL_BULK_API int OfficialBulk_IsSupportedSize(unsigned long long size)
 {
     return size==BANK_V15_SIZE || size==BANK_G7_PKHEX_VIEW_SIZE;
 }
 
-int OfficialBulk_ValidateHeader4(const unsigned char header[4])
+OFFICIAL_BULK_API int OfficialBulk_ValidateHeader4(const unsigned char header[4])
 {
     unsigned version=(unsigned)header[0]|((unsigned)header[1]<<8);
     unsigned boxes=(unsigned)header[2]|((unsigned)header[3]<<8);
     return version==2u && boxes==100u;
 }
 
-int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE])
+OFFICIAL_BULK_API int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE])
 {
     unsigned i;
     for (i=0;i<BANK_V15_PKM_SIZE;i++) if (record[i]) return 0;
     return 1;
 }
 
-int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned box,unsigned slot,
+OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned box,unsigned slot,
     const unsigned char bulkRecord[BANK_V15_PKM_SIZE],const OfficialBulkMetadata *meta)
 {
     unsigned char *dst;
@@ -50,7 +50,7 @@ int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned box,unsigned slot
     return 1;
 }
 
-void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,unsigned box,
+OFFICIAL_BULK_API void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,unsigned box,
     const unsigned char bulkMeta[BANK_V15_BOX_META_SIZE])
 {
     unsigned i;
@@ -61,7 +61,7 @@ void OfficialBulk_CopyBoxMetadata(unsigned char *runtimeBody,unsigned box,
 }
 
 #ifndef OFFICIAL_BULK_RUNTIME
-int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,const unsigned char *bulkBody,
+OFFICIAL_BULK_API int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,const unsigned char *bulkBody,
     unsigned long long bulkSize,const OfficialBulkMetadata *meta)
 {
     unsigned box,slot;
@@ -99,7 +99,7 @@ static void put4(char *p,unsigned value)
     p[3]=digit(value);
 }
 
-int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize)
+OFFICIAL_BULK_API int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize)
 {
     static const char prefix[]="/3ds/Bank/bankdata_";
     static const char suffix[]=".bin";
@@ -117,9 +117,14 @@ int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsi
     return 1;
 }
 
-unsigned char OfficialBulk_FormatTagForProfile(unsigned profileId)
+OFFICIAL_BULK_API unsigned char OfficialBulk_FormatTagForProfile(unsigned profileId)
 {
     if (profileId>=1u && profileId<=4u) return 0u;
     if (profileId>=5u && profileId<=8u) return 1u;
     return 0xFFu;
+}
+
+OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned callbackStatus,unsigned specialFlag)
+{
+    return substate==2u && callbackStatus==1u && specialFlag==0u;
 }
