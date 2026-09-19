@@ -19,7 +19,7 @@ jobs:
           ref: research/saveboxes-transaction-analysis
           fetch-depth: 0
 
-      - name: Apply code-cave and verifier fixes
+      - name: Apply split-payload build fix
         shell: bash
         run: |
           set -euxo pipefail
@@ -28,15 +28,16 @@ jobs:
 
           main = Path('bank/src/main.s')
           s = main.read_text()
-          old = '''CombinePatch_BulkPayloadBegin:\n    .importobj "../build/bulk_import.o"\nCombinePatch_BulkPayloadEnd:\n.endarea\n'''
-          if old not in s:
-              raise SystemExit('bulk payload block not found')
-          s = s.replace(old, '.endarea\n', 1)
           marker = '''@@loadFailed:\n    mov r0,r4\n    mov r1,#3\n    strb r1,[r0,#0x30]\n    mov r0,#1\n    pop {r4,pc}\n    .pool\n\n// Keep broken-file paths outside the imported C payload.\n'''
-          replacement = '''@@loadFailed:\n    mov r0,r4\n    mov r1,#3\n    strb r1,[r0,#0x30]\n    mov r0,#1\n    pop {r4,pc}\n    .pool\n\n// The HOME-state cave is nearly full after the combined mode/UI wrappers.\n// Place the small Bulk Import C object in the still-unused tail-cave gap before\n// the fixed broken-file path literals instead of overflowing the 0x814 HOME area.\n.align 4\nCombinePatch_BulkPayloadBegin:\n    .importobj "../build/bulk_import.o"\nCombinePatch_BulkPayloadEnd:\n\n// Keep broken-file paths outside the imported C payload.\n'''
+          replacement = '''@@loadFailed:\n    mov r0,r4\n    mov r1,#3\n    strb r1,[r0,#0x30]\n    mov r0,#1\n    pop {r4,pc}\n    .pool\n\n// Keep the Bulk Import wrapper separate from the common local-file payload.\n// patch-base.o nearly fills the OptionalReward cave by itself, while this\n// smaller object fits in the verified tail-cave gap before the fixed paths.\n.align 4\nCombinePatch_BulkPayloadBegin:\n    .importobj "../build/bulk_import.o"\nCombinePatch_BulkPayloadEnd:\n\n// Keep broken-file paths outside the imported C payload.\n'''
           if marker not in s:
               raise SystemExit('tail-cave insertion marker not found')
-          main.write_text(s.replace(marker, replacement, 1))
+          s = s.replace(marker, replacement, 1)
+          old = '''CombinePatch_PayloadBegin:\n    .importobj "../build/patch.o"\nCombinePatch_PayloadEnd:\n'''
+          new = '''CombinePatch_PayloadBegin:\n    .importobj "../build/patch-base.o"\nCombinePatch_PayloadEnd:\n'''
+          if old not in s:
+              raise SystemExit('combined patch.o import not found')
+          main.write_text(s.replace(old, new, 1))
 
           verify = Path('bank/src/verify_patch.py')
           v = verify.read_text()
@@ -69,5 +70,5 @@ jobs:
           git config user.name "969981"
           git config user.email "58679844+969981@users.noreply.github.com"
           git add bank/src/main.s bank/src/verify_patch.py
-          git commit -m "fix(bank): fit bulk payload in verified code caves"
+          git commit -m "fix(bank): split bulk payload across verified caves"
           git push origin HEAD:research/saveboxes-transaction-analysis
