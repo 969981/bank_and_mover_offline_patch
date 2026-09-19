@@ -8,6 +8,7 @@ on:
       - bank/src/official_bulk_sync.c
       - bank/src/official_bulk_sync_core.c
       - bank/src/official_bulk_sync.h
+      - bank/src/official_bulk_sync_prod.c
       - bank/src/official_bulk_sync_host_test.c
       - bank/src/main_official.s
       - bank/src/Makefile
@@ -26,7 +27,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
 
-      - name: Run host merge contract test
+      - name: Run host merge and state-gating contract test
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             bank/src/official_bulk_sync_host_test.c \
@@ -34,17 +35,22 @@ jobs:
             -o /tmp/official_bulk_sync_host_test
           /tmp/official_bulk_sync_host_test
 
-      - name: Compile ARMv6K production objects
+      - name: Compile compact ARMv6K Thumb production object
         run: |
-          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -marm -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
-          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync.c -o /tmp/official_bulk_sync.o
-          arm-none-eabi-gcc $FLAGS -DOFFICIAL_BULK_RUNTIME -c bank/src/official_bulk_sync_core.c -o /tmp/official_bulk_sync_core.o
-          arm-none-eabi-objdump -h /tmp/official_bulk_sync.o
-          arm-none-eabi-objdump -h /tmp/official_bulk_sync_core.o
+          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/official_bulk_sync_prod.o
+          arm-none-eabi-size /tmp/official_bulk_sync_prod.o
+          arm-none-eabi-objdump -h /tmp/official_bulk_sync_prod.o
 
       - name: Reject unexpected ARM runtime helpers
         run: |
-          if arm-none-eabi-nm -u /tmp/official_bulk_sync.o /tmp/official_bulk_sync_core.o | grep -E '__aeabi_(u|i)div|__aeabi_(u|i)divmod'; then
+          if arm-none-eabi-nm -u /tmp/official_bulk_sync_prod.o | grep -E '__aeabi_(u|i)div|__aeabi_(u|i)divmod'; then
             echo 'unexpected division runtime dependency' >&2
             exit 1
           fi
+
+      - name: Reject production payload growth past text-tail budget
+        run: |
+          text=$(arm-none-eabi-size /tmp/official_bulk_sync_prod.o | awk 'NR==2 {print $1}')
+          echo "Thumb object text bytes: $text"
+          test "$text" -le 1680
