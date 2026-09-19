@@ -1,0 +1,73 @@
+name: apply-bank-build-fix
+
+on:
+  push:
+    branches:
+      - tmp-bank-build-fix
+    paths:
+      - .github/workflows/apply-bank-build-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/saveboxes-transaction-analysis
+          fetch-depth: 0
+
+      - name: Apply code-cave and verifier fixes
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          main = Path('bank/src/main.s')
+          s = main.read_text()
+          old = '''CombinePatch_BulkPayloadBegin:\n    .importobj "../build/bulk_import.o"\nCombinePatch_BulkPayloadEnd:\n.endarea\n'''
+          if old not in s:
+              raise SystemExit('bulk payload block not found')
+          s = s.replace(old, '.endarea\n', 1)
+          marker = '''@@loadFailed:\n    mov r0,r4\n    mov r1,#3\n    strb r1,[r0,#0x30]\n    mov r0,#1\n    pop {r4,pc}\n    .pool\n\n// Keep broken-file paths outside the imported C payload.\n'''
+          replacement = '''@@loadFailed:\n    mov r0,r4\n    mov r1,#3\n    strb r1,[r0,#0x30]\n    mov r0,#1\n    pop {r4,pc}\n    .pool\n\n// The HOME-state cave is nearly full after the combined mode/UI wrappers.\n// Place the small Bulk Import C object in the still-unused tail-cave gap before\n// the fixed broken-file path literals instead of overflowing the 0x814 HOME area.\n.align 4\nCombinePatch_BulkPayloadBegin:\n    .importobj "../build/bulk_import.o"\nCombinePatch_BulkPayloadEnd:\n\n// Keep broken-file paths outside the imported C payload.\n'''
+          if marker not in s:
+              raise SystemExit('tail-cave insertion marker not found')
+          main.write_text(s.replace(marker, replacement, 1))
+
+          verify = Path('bank/src/verify_patch.py')
+          v = verify.read_text()
+          old = '''    for name in (\n        "offlinepatch_optionalrewardbypassupdate",\n        "offlinepatch_loadbankdata",\n        "offlinepatch_savedisplaydelayupdate",\n'''
+          new = '''    for name in (\n        "offlinepatch_optionalrewardbypassupdate",\n        "offlinepatch_loadbankdata_base",\n        "offlinepatch_savedisplaydelayupdate",\n'''
+          if old not in v:
+              raise SystemExit('legacy payload verifier tuple not found')
+          v = v.replace(old, new, 1)
+          needle = '''        if not payload_begin <= address < payload_end:\n            raise ValueError(f"{name} is outside the imported local-file payload")\n\n'''
+          insert = '''        if not payload_begin <= address < payload_end:\n            raise ValueError(f"{name} is outside the imported local-file payload")\n\n    bulk_begin = symbols["combinepatch_bulkpayloadbegin"]\n    bulk_end = symbols["combinepatch_bulkpayloadend"]\n    if not TAIL_CAVE_START <= bulk_begin < bulk_end <= TAIL_CAVE_END:\n        raise ValueError("Bulk Import payload is outside the executable tail cave")\n    if not bulk_begin <= symbols["offlinepatch_loadbankdata"] < bulk_end:\n        raise ValueError("offlinepatch_loadbankdata is outside the Bulk Import payload")\n\n'''
+          if needle not in v:
+              raise SystemExit('payload range verifier marker not found')
+          verify.write_text(v.replace(needle, insert, 1))
+          PY
+
+      - name: Run regression tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python3 -m unittest discover -s ViewerForBankdata/tests -v
+          cc -std=c11 -Wall -Wextra -Werror bank/src/bulk_import_host_test.c -o /tmp/bulk_import_host_test
+          /tmp/bulk_import_host_test
+          python3 -m py_compile bank/src/verify_patch.py
+          git diff --check
+
+      - name: Commit to research branch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          git config user.name "969981"
+          git config user.email "58679844+969981@users.noreply.github.com"
+          git add bank/src/main.s bank/src/verify_patch.py
+          git commit -m "fix(bank): fit bulk payload in verified code caves"
+          git push origin HEAD:research/saveboxes-transaction-analysis
