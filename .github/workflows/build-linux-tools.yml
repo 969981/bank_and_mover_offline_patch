@@ -22,15 +22,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
 
-      - name: Build armips v0.11.0
+      - name: Build armips with -stat support
         shell: bash
         run: |
           set -euxo pipefail
-          git clone --recursive --branch v0.11.0 --depth 1 https://github.com/Kingcom/armips.git "$RUNNER_TEMP/armips"
-          # v0.11.0 relied on a transitive <limits> include that GCC 13 no longer provides.
-          sed -i '1i#include <limits>' "$RUNNER_TEMP/armips/Core/ExpressionFunctions.cpp"
+          git clone --recursive https://github.com/Kingcom/armips.git "$RUNNER_TEMP/armips"
+          git -C "$RUNNER_TEMP/armips" checkout 62adab4ef30da765f5cf22a451eb08a59c54dc8b
           cmake -S "$RUNNER_TEMP/armips" -B "$RUNNER_TEMP/armips/build" -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/armips/build"
+          "$RUNNER_TEMP/armips/build/armips" 2>&1 | grep -- '-stat'
 
       - name: Build Floating IPS CLI
         shell: bash
@@ -74,10 +74,9 @@ jobs:
           cp -a bank "$OUT/source/bank"
           cp -a ViewerForBankdata "$OUT/source/ViewerForBankdata"
           cp -a release "$OUT/source/release"
-          # The checked-in rom directory contains no copyrighted base code; keep it as a destination skeleton only.
           rm -rf "$OUT/source/bank/rom/exefs" "$OUT/source/bank/rom/romfs"
           mkdir -p "$OUT/source/bank/rom/exefs" "$OUT/source/bank/rom/romfs"
-          "$OUT/tools/armips" 2>&1 | head -20 || true
+          "$OUT/tools/armips" 2>&1 | head -25 || true
           "$OUT/tools/flips" --help | head -20
           "$OUT/tools/3dstool" -h | head -30 || true
           sha256sum "$OUT/tools/armips" "$OUT/tools/flips" "$OUT/tools/3dstool" "$OUT/source/bank/build/patch.o"
@@ -85,7 +84,7 @@ jobs:
       - name: Upload Linux build helpers
         uses: actions/upload-artifact@v4
         with:
-          name: bank-linux-build-helper
+          name: bank-linux-build-helper-stat
           path: ${{ runner.temp }}/bank-build-helper/
           if-no-files-found: error
           retention-days: 1
