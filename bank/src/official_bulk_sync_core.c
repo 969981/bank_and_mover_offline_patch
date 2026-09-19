@@ -133,3 +133,22 @@ OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned
     if (substate!=2u || callbackStatus!=1u || specialFlag>1u) return 0;
     return specialFlag?2:1;
 }
+
+OFFICIAL_BULK_API int OfficialBulk_HomeCommitAction(unsigned substate,unsigned dirty,
+    unsigned callbackStatus,unsigned specialFlag)
+{
+    if (!dirty || substate==0u) return OFFICIAL_HOME_COMMIT_NATIVE;
+    if (substate==1u) return OFFICIAL_HOME_COMMIT_START_STAGE;
+    if (substate==0x80u) {
+        if (!callbackStatus) return OFFICIAL_HOME_COMMIT_WAIT;
+        return specialFlag?OFFICIAL_HOME_COMMIT_START_ROLLBACK:OFFICIAL_HOME_COMMIT_START_COMMIT;
+    }
+    if (substate==0x81u) {
+        if (!callbackStatus) return OFFICIAL_HOME_COMMIT_WAIT;
+        return specialFlag?OFFICIAL_HOME_COMMIT_START_ROLLBACK:OFFICIAL_HOME_COMMIT_FINISH_SUCCESS;
+    }
+    if (substate==0x82u) {
+        return callbackStatus?OFFICIAL_HOME_COMMIT_FINISH_ERROR:OFFICIAL_HOME_COMMIT_WAIT;
+    }
+    return OFFICIAL_HOME_COMMIT_FINISH_ERROR;
+}
