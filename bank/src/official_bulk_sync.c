@@ -1,6 +1,7 @@
 #include "official_bulk_sync.h"
 
 typedef unsigned char u8;
+typedef unsigned short u16;
 typedef unsigned int u32;
 typedef signed int s32;
 typedef unsigned long long u64;
@@ -84,7 +85,7 @@ static int restoreSnapshot(const char *path,u32 pathSize,u8 *body)
 static u8 *bankObjectFromState(u8 *state)
 {
     u8 *flow,*object;
-    flow=state?*(u8 **)(state+8):0;
+    flow=*(u8 **)(state+8);
     object=flow?*(u8 **)(flow+0xCC):0;
     return object && *(u32 *)object==BANK_OBJECT_VTABLE?object:0;
 }
@@ -137,20 +138,20 @@ static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
     return closeResult?-1:1;
 }
 
-static void fallbackHomeRollback(u8 *state)
+static __attribute__((noinline)) void fallbackHomeRollback(u8 *state)
 {
-    state[0x40]=state[0x41]=0; *HOME_BULK_DIRTY=2; *(u32 *)(state+0x10)=1u;
+    *(u16 *)(state+0x40)=0; *HOME_BULK_DIRTY=2; *(u32 *)(state+0x10)=1u;
 }
 
 __attribute__((used,noinline,section(".text.official")))
 int OfficialBulkHomeCommit_Process(void *stateVoid)
 {
     u8 *state=(u8 *)stateVoid,*object; u32 substate;
-    if (!state || !*HOME_BULK_DIRTY) return 0;
+    if (!*HOME_BULK_DIRTY) return 0;
     substate=*(u32 *)(state+0x10);
     if (*HOME_BULK_DIRTY==2u) {
         if (substate==2u && state[0x40]) {
-            *HOME_BULK_DIRTY=0; state[0x40]=state[0x41]=0; *(u32 *)(state+0x10)=4u; return 1;
+            *HOME_BULK_DIRTY=0; *(u16 *)(state+0x40)=0; *(u32 *)(state+0x10)=4u; return 1;
         }
         return 0;
     }
@@ -158,7 +159,7 @@ int OfficialBulkHomeCommit_Process(void *stateVoid)
     if (substate==1u) {
         object=bankObjectFromState(state);
         if (!object) { fallbackHomeRollback(state); return 1; }
-        state[0x40]=state[0x41]=0;
+        *(u16 *)(state+0x40)=0;
         if (!STAGE_FILE_UPDATE(*(void **)(state+0x3C),object+8,BANK_V15_SIZE,*(void **)(state+0x28))) {
             fallbackHomeRollback(state); return 1;
         }
@@ -167,7 +168,7 @@ int OfficialBulkHomeCommit_Process(void *stateVoid)
     if (substate==0x80u) {
         if (!state[0x40]) return 1;
         if (state[0x41]) { fallbackHomeRollback(state); return 1; }
-        state[0x40]=state[0x41]=0;
+        *(u16 *)(state+0x40)=0;
         if (!COMPLETE_UPDATE(*(void **)(state+0x3C),*(void **)(state+0x28),0u)) {
             fallbackHomeRollback(state); return 1;
         }
@@ -176,7 +177,7 @@ int OfficialBulkHomeCommit_Process(void *stateVoid)
     if (substate==0x81u) {
         if (!state[0x40]) return 1;
         if (state[0x41]) { fallbackHomeRollback(state); return 1; }
-        *HOME_BULK_DIRTY=0; state[0x40]=state[0x41]=0; *(u32 *)(state+0x10)=3u; return 1;
+        *HOME_BULK_DIRTY=0; *(u16 *)(state+0x40)=0; *(u32 *)(state+0x10)=3u; return 1;
     }
     fallbackHomeRollback(state); return 1;
 }
@@ -186,7 +187,6 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
 {
     u8 *state=(u8 *)stateVoid,*object,*body; OfficialBulkMetadata meta={0u,0u,0u};
     char backupPath[48]; int applyResult,mode;
-    if (!state || !commandBuffer) return 0;
     mode=OfficialBulk_ShouldProcessState(*(u32 *)(state+0x10),state[0x40],state[0x41]);
     if (!mode) return 0;
     if (mode==2) *HOME_BULK_DIRTY=0;
