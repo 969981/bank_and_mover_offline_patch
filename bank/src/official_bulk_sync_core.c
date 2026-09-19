@@ -16,12 +16,14 @@ OFFICIAL_BULK_API int OfficialBulk_IsSupportedSize(unsigned long long size)
     return size==BANK_V15_SIZE || size==BANK_G7_PKHEX_VIEW_SIZE;
 }
 
+#ifndef OFFICIAL_BULK_RUNTIME
 OFFICIAL_BULK_API int OfficialBulk_ValidateHeader4(const unsigned char header[4])
 {
     unsigned version=(unsigned)header[0]|((unsigned)header[1]<<8);
     unsigned boxes=(unsigned)header[2]|((unsigned)header[3]<<8);
     return version==2u && boxes==100u;
 }
+#endif
 
 OFFICIAL_BULK_API int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE])
 {
