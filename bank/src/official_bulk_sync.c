@@ -17,13 +17,10 @@ enum { ARCHIVE_SDMC=9, PATH_EMPTY=1, PATH_ASCII=3, OPEN_READ=1, OPEN_WRITE=2, OP
 #define TIME_CONTAINER_INIT ((TimeContainerInit)0x00234648u)
 #define TIME_QUERY ((TimeQuery)0x001D3BF4u)
 #define TIME_PACK ((TimePack)0x001F2BD4u)
-#define ALLOC_BUFFER ((AllocBuffer)0x00234168u)
-#define FREE_BUFFER ((FreeBuffer)0x00230994u)
 #define STAGE_FILE_UPDATE ((StageFileUpdate)0x002A2504u)
 #define COMPLETE_UPDATE ((TransactionUpdate)0x001D5D74u)
 #define GAME_REGISTRY_SLOT ((volatile u32 *)0x003AB90Cu)
 #define BANK_ROOT_SLOT ((volatile u32 *)0x003AB938u)
-#define HOME_BULK_BUFFER ((volatile u32 *)0x003ABFF8u)
 #define HOME_BULK_DIRTY ((volatile u8 *)0x003ABFFCu)
 #define BANK_OBJECT_VTABLE 0x003626FCu
 
@@ -37,11 +34,8 @@ typedef void (*TimeContainerInit)(void *);
 typedef int (*TimeQuery)(void *,void *);
 typedef u64 (*TimePack)(void *);
 typedef u8 (*SourceSoftwareGetter)(void *);
-typedef void *(*AllocBuffer)(void *,u32);
-typedef void (*FreeBuffer)(void *);
 typedef int (*StageFileUpdate)(void *,void *,u32,void *);
 typedef int (*TransactionUpdate)(void *,void *,u32);
-typedef void (*BankSerialize)(void *,void *);
 
 static const char emptyPath[1]={0};
 static const char bulkPath[]="/3ds/Bank/bulk_import.bin";
@@ -144,11 +138,6 @@ static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
     return closeResult?-1:1;
 }
 
-static void freeHomeBuffer(void)
-{
-    void *p=(void *)(*HOME_BULK_BUFFER); if (p) FREE_BUFFER(p); *HOME_BULK_BUFFER=0;
-}
-
 static void fallbackHomeRollback(u8 *state)
 {
     state[0x40]=state[0x41]=0; *HOME_BULK_DIRTY=2; *(u32 *)(state+0x10)=1u;
@@ -157,25 +146,21 @@ static void fallbackHomeRollback(u8 *state)
 __attribute__((used,noinline,section(".text.official")))
 int OfficialBulkHomeCommit_Process(void *stateVoid)
 {
-    u8 *state=(u8 *)stateVoid,*object; u32 substate,*vtable; void *buffer; BankSerialize serialize;
+    u8 *state=(u8 *)stateVoid,*object; u32 substate;
     if (!state || !*HOME_BULK_DIRTY) return 0;
     substate=*(u32 *)(state+0x10);
-
     if (*HOME_BULK_DIRTY==2u) {
         if (substate==2u && state[0x40]) {
-            freeHomeBuffer(); *HOME_BULK_DIRTY=0; state[0x40]=state[0x41]=0;
-            *(u32 *)(state+0x10)=4u; return 1;
+            *HOME_BULK_DIRTY=0; state[0x40]=state[0x41]=0; *(u32 *)(state+0x10)=4u; return 1;
         }
         return 0;
     }
     if (substate==0u) return 0;
     if (substate==1u) {
         object=bankObjectFromState(state);
-        buffer=object?ALLOC_BUFFER(*(void **)(state+0x0C),BANK_V15_SIZE):0;
-        if (!buffer) { fallbackHomeRollback(state); return 1; }
-        *HOME_BULK_BUFFER=(u32)buffer; vtable=*(u32 **)object; serialize=(BankSerialize)vtable[2];
-        serialize(object,buffer); state[0x40]=state[0x41]=0;
-        if (!STAGE_FILE_UPDATE(*(void **)(state+0x3C),buffer,BANK_V15_SIZE,*(void **)(state+0x28))) {
+        if (!object) { fallbackHomeRollback(state); return 1; }
+        state[0x40]=state[0x41]=0;
+        if (!STAGE_FILE_UPDATE(*(void **)(state+0x3C),object+8,BANK_V15_SIZE,*(void **)(state+0x28))) {
             fallbackHomeRollback(state); return 1;
         }
         *(u32 *)(state+0x10)=0x80u; return 1;
@@ -192,8 +177,7 @@ int OfficialBulkHomeCommit_Process(void *stateVoid)
     if (substate==0x81u) {
         if (!state[0x40]) return 1;
         if (state[0x41]) { fallbackHomeRollback(state); return 1; }
-        freeHomeBuffer(); *HOME_BULK_DIRTY=0; state[0x40]=state[0x41]=0;
-        *(u32 *)(state+0x10)=3u; return 1;
+        *HOME_BULK_DIRTY=0; state[0x40]=state[0x41]=0; *(u32 *)(state+0x10)=3u; return 1;
     }
     fallbackHomeRollback(state); return 1;
 }
@@ -206,7 +190,7 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
     if (!state || !commandBuffer) return 0;
     mode=OfficialBulk_ShouldProcessState(*(u32 *)(state+0x10),state[0x40],state[0x41]);
     if (!mode) return 0;
-    if (mode==2) { *HOME_BULK_DIRTY=0; *HOME_BULK_BUFFER=0; }
+    if (mode==2) *HOME_BULK_DIRTY=0;
     object=bankObjectFromState(state); if (!object) return 0; body=object+8;
     if (!OfficialBulk_ValidateHeader4(body+BANK_V15_VERSION_OFFSET)) return 0;
     if (mode==1 && !queryMetadata(&meta)) return 0;
