@@ -23,21 +23,21 @@
 // game-linked Bank download finished: substate==2, callbackStatus==1 and
 // specialFlag==0. The Thumb runtime checks those fields itself, so no global
 // pending marker and no download-callback hook are needed.
+//
+// Important interworking rule: do not let the imported Thumb object call an
+// ARM helper through R_ARM_THM_CALL. armips currently relocates that external
+// Thumb->ARM call two bytes early on this payload. Fetch TLS here in ARM state
+// and pass the command-buffer pointer as r1 instead.
 OfficialBulk_BankDataSyncDispatch:
     push {r4-r6,lr}
     mov r4,r0
+    mrc p15,0,r1,c13,c0,3
+    add r1,r1,#0x80
     ldr r12,=OfficialBulkSync_Process+1
     blx r12
     mov r0,r4
     b BankDataSyncState_Update + 4
     .pool
-
-// ARMv6K Thumb code cannot issue the CP15 TLS MRC used by the raw FS IPC helper.
-// Keep this three-instruction bridge in ARM and call it through interworking.
-OfficialBulk_CommandBuffer:
-    mrc p15,0,r0,c13,c0,3
-    add r0,r0,#0x80
-    bx lr
 
 .align 2
     .importobj "../build/official_bulk_sync_prod.o"
