@@ -10,8 +10,10 @@ ALLOWED = [
 CAVES = [(0x00313910,0x00314000)]
 EXPECTED_SYMBOLS = {
     "officialbulk_bankdatasyncdispatch":0x00313910,
-    "officialbulk_commandbuffer":0x0031392C,
-    "officialbulksync_process":0x00313938,
+    "officialbulksync_process":0x003139D4,
+}
+FORBIDDEN_SYMBOLS = {
+    "officialbulk_commandbuffer",
 }
 
 def addr_slice(data,start,end):
@@ -60,13 +62,13 @@ def main():
         addr=CODE_BASE+i
         assert any(s<=addr<e for s,e,_ in ALLOWED), f"unexpected patched byte at {addr:08X}"
     assert addr_slice(base,0x002AF460,0x002AF464)!=addr_slice(patched,0x002AF460,0x002AF464)
-    # The previous preview corrupted live mapped .data around 0x003ABA90. This
-    # verifier permanently forbids any byte changes in that whole region.
     assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
         "official-only patch must not modify mapped data/BSS image"
     syms=read_symbols(args.symbols)
     for name,addr in EXPECTED_SYMBOLS.items():
         assert syms.get(name)==addr, f"symbol {name} expected {addr:08X}, got {syms.get(name)}"
+    for name in FORBIDDEN_SYMBOLS:
+        assert name not in syms, f"forbidden cross-ISA helper symbol present: {name}"
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
     print("official bulk sync static verification passed")
