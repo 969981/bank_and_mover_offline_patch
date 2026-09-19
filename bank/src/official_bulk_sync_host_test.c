@@ -82,26 +82,19 @@ int main(void)
                    bulk+BANK_V15_MAIN_BOX_START+BANK_V15_BOX_PKM_BYTES,
                    BANK_V15_BOX_META_SIZE));
 
-    /* HOME direct has no selected X/Y/ORAS/SM/USUM profile. A NULL metadata
-       context therefore means: bulk payload is canonical Bank7/PK7 data,
-       changed occupied slots get tag 1, while source/timestamp remain from
-       the fresh server slot (or zero for a previously-empty slot). */
     memset(slot(homeRuntime,0,0),0x31,BANK_V15_PKM_SIZE);
     memset(slot(homeBulk,0,0),0x41,BANK_V15_PKM_SIZE);
     idx=index_of(0,0);
     homeRuntime[BANK_V15_TAG_START+idx]=0;
     homeRuntime[BANK_V15_SOURCE_START+idx]=17;
     *(uint64_t *)(homeRuntime+BANK_V15_TIMESTAMP_START+idx*8u)=0x8877665544332211ULL;
-
     memset(slot(homeBulk,0,1),0x51,BANK_V15_PKM_SIZE);
     assert(OfficialBulk_ApplyDataOnly(homeRuntime,homeBulk,BANK_G7_PKHEX_VIEW_SIZE,0)==1);
-
     idx=index_of(0,0);
     assert(slot(homeRuntime,0,0)[0]==0x41);
     assert(homeRuntime[BANK_V15_TAG_START+idx]==1);
     assert(homeRuntime[BANK_V15_SOURCE_START+idx]==17);
     assert(*(uint64_t *)(homeRuntime+BANK_V15_TIMESTAMP_START+idx*8u)==0x8877665544332211ULL);
-
     idx=index_of(0,1);
     assert(slot(homeRuntime,0,1)[0]==0x51);
     assert(homeRuntime[BANK_V15_TAG_START+idx]==1);
@@ -119,8 +112,9 @@ int main(void)
     assert(OfficialBulk_FormatTagForProfile(0)==0xFF);
     assert(OfficialBulk_FormatTagForProfile(9)==0xFF);
 
+    /* 1 = ordinary game-linked download, 2 = HOME-mode download. */
     assert(OfficialBulk_ShouldProcessState(2u,1u,0u)==1);
-    assert(OfficialBulk_ShouldProcessState(2u,1u,1u)==1);
+    assert(OfficialBulk_ShouldProcessState(2u,1u,1u)==2);
     assert(OfficialBulk_ShouldProcessState(2u,0u,0u)==0);
     assert(OfficialBulk_ShouldProcessState(2u,0u,1u)==0);
     assert(OfficialBulk_ShouldProcessState(3u,1u,0u)==0);
