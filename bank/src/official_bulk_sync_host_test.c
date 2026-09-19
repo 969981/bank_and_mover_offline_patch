@@ -92,10 +92,14 @@ int main(void)
     assert(OfficialBulk_FormatTagForProfile(0)==0xFF);
     assert(OfficialBulk_FormatTagForProfile(9)==0xFF);
 
+    /* Both ordinary game-linked state 16 and HOME state 28 share the
+       successful full-Bank download point. HOME is specialFlag==1. */
     assert(OfficialBulk_ShouldProcessState(2u,1u,0u)==1);
-    assert(OfficialBulk_ShouldProcessState(2u,1u,1u)==0);
+    assert(OfficialBulk_ShouldProcessState(2u,1u,1u)==1);
     assert(OfficialBulk_ShouldProcessState(2u,0u,0u)==0);
+    assert(OfficialBulk_ShouldProcessState(2u,0u,1u)==0);
     assert(OfficialBulk_ShouldProcessState(3u,1u,0u)==0);
+    assert(OfficialBulk_ShouldProcessState(3u,1u,1u)==0);
 
     free(runtime); free(bulk);
     return 0;
