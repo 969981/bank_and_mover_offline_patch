@@ -59,18 +59,6 @@ static unsigned takeTens(unsigned *value)
     return tens;
 }
 
-#ifdef OFFICIAL_BULK_THUMB_RUNTIME
-extern volatile u32 *OfficialBulk_CommandBuffer(void);
-#define commandBuffer OfficialBulk_CommandBuffer
-#else
-static volatile u32 *commandBuffer(void)
-{
-    u32 tls;
-    __asm__ volatile("mrc p15, 0, %0, c13, c0, 3" : "=r"(tls));
-    return (volatile u32 *)(tls+0x80u);
-}
-#endif
-
 static s32 sync(u32 handle)
 {
     register u32 r0 __asm__("r0")=handle;
@@ -78,9 +66,9 @@ static s32 sync(u32 handle)
     return (s32)r0;
 }
 
-static s32 setSize(u32 handle,u64 size)
+static s32 setSize(u32 handle,u64 size,volatile u32 *c)
 {
-    volatile u32 *c=commandBuffer(); s32 r;
+    s32 r;
     c[0]=0x08050080u; c[1]=(u32)size; c[2]=(u32)(size>>32);
     r=sync(handle); return r?r:(s32)c[1];
 }
@@ -91,11 +79,11 @@ static s32 openFile(const char *path,u32 pathSize,u32 flags,u32 *handle)
         PATH_ASCII,path,pathSize,flags,0);
 }
 
-static int writeSnapshot(const char *path,u32 pathSize,const u8 *body)
+static int writeSnapshot(const char *path,u32 pathSize,const u8 *body,volatile u32 *commandBuffer)
 {
     u32 h=0,n=0; s32 r,closeResult=0;
     r=openFile(path,pathSize,OPEN_READ|OPEN_WRITE|OPEN_CREATE,&h);
-    if (!r) r=setSize(h,BANK_V15_SIZE);
+    if (!r) r=setSize(h,BANK_V15_SIZE,commandBuffer);
     if (!r) r=FILE_WRITE(&h,&n,0,body,BANK_V15_SIZE,WRITE_FLUSH);
     if (h) closeResult=FILE_CLOSE(&h);
     return !r && !closeResult && n==BANK_V15_SIZE;
@@ -147,6 +135,7 @@ static int readExact(u32 *handle,u64 offset,void *dst,u32 size)
     return !FILE_READ(handle,&n,offset,dst,size) && n==size;
 }
 
+/* 1=applied, 0=no valid bulk input, -1=runtime may be partially modified. */
 static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
 {
     u8 header[4],record[BANK_V15_PKM_SIZE],boxMeta[BANK_V15_BOX_META_SIZE];
@@ -180,7 +169,7 @@ static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
 }
 
 __attribute__((used,noinline,section(".text.official")))
-int OfficialBulkSync_Process(void *stateVoid)
+int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
 {
     u8 *state=(u8 *)stateVoid,*flow,*object,*body;
     OfficialBulkMetadata meta={0u,0u,0u};
@@ -188,7 +177,7 @@ int OfficialBulkSync_Process(void *stateVoid)
     unsigned profile=0,sec=0;
     int applyResult,haveMeta;
 
-    if (!state) return 0;
+    if (!state || !commandBuffer) return 0;
     if (!OfficialBulk_ShouldProcessState(*(u32 *)(state+0x10),state[0x40],state[0x41])) return 0;
     flow=*(u8 **)(state+8);
     object=flow?*(u8 **)(flow+0xCC):0;
@@ -204,7 +193,7 @@ int OfficialBulkSync_Process(void *stateVoid)
         backupPath[32]=(char)('0'+tens);
         backupPath[33]=(char)('0'+sec);
     }
-    if (!writeSnapshot(backupPath,39u,body)) return 0;
+    if (!writeSnapshot(backupPath,39u,body,commandBuffer)) return 0;
     if (!haveMeta) return 0;
     (void)profile;
 
