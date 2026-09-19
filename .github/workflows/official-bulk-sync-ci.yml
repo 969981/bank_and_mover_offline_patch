@@ -38,7 +38,7 @@ jobs:
 
       - name: Compile compact ARMv6K Thumb production object
         run: |
-          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          FLAGS='-std=c11 -Oz -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
           arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/official_bulk_sync_prod.o
           arm-none-eabi-size /tmp/official_bulk_sync_prod.o
           arm-none-eabi-objdump -h /tmp/official_bulk_sync_prod.o
