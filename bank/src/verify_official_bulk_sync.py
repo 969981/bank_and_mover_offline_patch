@@ -4,6 +4,7 @@ import argparse, hashlib, pathlib
 BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
 ALLOWED = [
+    (0x002A57C8,0x002A57CC,"skip mileage/reward transition"),
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
     (0x00313910,0x00314000,"official RX text-tail payload"),
 ]
@@ -61,6 +62,15 @@ def main():
         if a==b: continue
         addr=CODE_BASE+i
         assert any(s<=addr<e for s,e,_ in ALLOWED), f"unexpected patched byte at {addr:08X}"
+
+    # Stock: MOVEQ r0,#12 -> reward eligibility state 12.
+    # Patch: MOVEQ r0,#25 -> Bank Box state 25, bypassing reward UI without
+    # changing reward state bodies or mileage/reward storage.
+    assert addr_slice(base,0x002A57C8,0x002A57CC)==bytes.fromhex("0c00a003"), \
+        "unexpected stock post-download next-state opcode"
+    assert addr_slice(patched,0x002A57C8,0x002A57CC)==bytes.fromhex("1900a003"), \
+        "mileage/reward UI bypass must be MOVEQ r0,#25"
+
     assert addr_slice(base,0x002AF460,0x002AF464)!=addr_slice(patched,0x002AF460,0x002AF464)
     assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
         "official-only patch must not modify mapped data/BSS image"
@@ -71,6 +81,6 @@ def main():
         assert name not in syms, f"forbidden cross-ISA helper symbol present: {name}"
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
-    print("official bulk sync static verification passed")
+    print("official bulk sync + skip-mileage static verification passed")
 
 if __name__=="__main__": main()
