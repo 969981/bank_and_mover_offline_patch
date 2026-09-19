@@ -30,7 +30,7 @@ jobs:
           git -C "$RUNNER_TEMP/armips" checkout 62adab4ef30da765f5cf22a451eb08a59c54dc8b
           cmake -S "$RUNNER_TEMP/armips" -B "$RUNNER_TEMP/armips/build" -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build "$RUNNER_TEMP/armips/build"
-          "$RUNNER_TEMP/armips/build/armips" 2>&1 | grep -- '-stat'
+          ("$RUNNER_TEMP/armips/build/armips" 2>&1 || true) | grep -- '-stat'
 
       - name: Build Floating IPS CLI
         shell: bash
