@@ -112,7 +112,6 @@ int main(void)
     assert(OfficialBulk_FormatTagForProfile(0)==0xFF);
     assert(OfficialBulk_FormatTagForProfile(9)==0xFF);
 
-    /* 1 = ordinary game-linked download, 2 = HOME-mode download. */
     assert(OfficialBulk_ShouldProcessState(2u,1u,0u)==1);
     assert(OfficialBulk_ShouldProcessState(2u,1u,1u)==2);
     assert(OfficialBulk_ShouldProcessState(2u,0u,0u)==0);
@@ -120,19 +119,20 @@ int main(void)
     assert(OfficialBulk_ShouldProcessState(3u,1u,0u)==0);
     assert(OfficialBulk_ShouldProcessState(3u,1u,1u)==0);
 
-    /* HOME state 29 commit gate: native setup first, then Stage -> Commit.
-       Any service-error flag enters rollback, and rollback completion must
-       finish on the stock error terminal rather than entering HOME state 27. */
+    /* HOME state29: dirty=1 owns Stage/Commit; dirty=2 deliberately falls
+       back to stock State29 rollback and only intercepts its completion. */
     assert(OfficialBulk_HomeCommitAction(0u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_NATIVE);
     assert(OfficialBulk_HomeCommitAction(1u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_START_STAGE);
     assert(OfficialBulk_HomeCommitAction(0x80u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_WAIT);
     assert(OfficialBulk_HomeCommitAction(0x80u,1u,1u,0u)==OFFICIAL_HOME_COMMIT_START_COMMIT);
-    assert(OfficialBulk_HomeCommitAction(0x80u,1u,1u,1u)==OFFICIAL_HOME_COMMIT_START_ROLLBACK);
+    assert(OfficialBulk_HomeCommitAction(0x80u,1u,1u,1u)==OFFICIAL_HOME_COMMIT_FALLBACK_ROLLBACK);
     assert(OfficialBulk_HomeCommitAction(0x81u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_WAIT);
     assert(OfficialBulk_HomeCommitAction(0x81u,1u,1u,0u)==OFFICIAL_HOME_COMMIT_FINISH_SUCCESS);
-    assert(OfficialBulk_HomeCommitAction(0x81u,1u,1u,1u)==OFFICIAL_HOME_COMMIT_START_ROLLBACK);
-    assert(OfficialBulk_HomeCommitAction(0x82u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_WAIT);
-    assert(OfficialBulk_HomeCommitAction(0x82u,1u,1u,0u)==OFFICIAL_HOME_COMMIT_FINISH_ERROR);
+    assert(OfficialBulk_HomeCommitAction(0x81u,1u,1u,1u)==OFFICIAL_HOME_COMMIT_FALLBACK_ROLLBACK);
+    assert(OfficialBulk_HomeCommitAction(1u,2u,0u,0u)==OFFICIAL_HOME_COMMIT_NATIVE);
+    assert(OfficialBulk_HomeCommitAction(2u,2u,0u,0u)==OFFICIAL_HOME_COMMIT_NATIVE);
+    assert(OfficialBulk_HomeCommitAction(2u,2u,1u,0u)==OFFICIAL_HOME_COMMIT_FINISH_ERROR);
+    assert(OfficialBulk_HomeCommitAction(2u,2u,1u,1u)==OFFICIAL_HOME_COMMIT_FINISH_ERROR);
     assert(OfficialBulk_HomeCommitAction(1u,0u,0u,0u)==OFFICIAL_HOME_COMMIT_NATIVE);
 
     free(runtime); free(bulk); free(homeRuntime); free(homeBulk);
