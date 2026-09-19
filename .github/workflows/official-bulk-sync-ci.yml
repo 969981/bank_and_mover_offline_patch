@@ -44,8 +44,12 @@ jobs:
 
       - name: Reject unexpected ARM runtime helpers
         run: |
-          if arm-none-eabi-nm -u /tmp/official_bulk_sync_prod.o | grep -E '__aeabi_(u|i)div|__aeabi_(u|i)divmod'; then
-            echo 'unexpected division runtime dependency' >&2
+          if arm-none-eabi-nm -u /tmp/official_bulk_sync_prod.o | grep -E '__aeabi_(u|i)div|__aeabi_(u|i)divmod|OfficialBulk_CommandBuffer'; then
+            echo 'unexpected runtime/interworking dependency' >&2
+            exit 1
+          fi
+          if arm-none-eabi-readelf -r /tmp/official_bulk_sync_prod.o | grep -q 'OfficialBulk_CommandBuffer'; then
+            echo 'forbidden Thumb-to-ARM R_ARM_THM_CALL relocation' >&2
             exit 1
           fi
 
@@ -54,3 +58,10 @@ jobs:
           text=$(arm-none-eabi-size /tmp/official_bulk_sync_prod.o | awk 'NR==2 {print $1}')
           echo "Thumb object text bytes: $text"
           test "$text" -le 1680
+
+      - name: Upload ARM object for local IPS assembly
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-bulk-sync-arm-object
+          path: /tmp/official_bulk_sync_prod.o
+          if-no-files-found: error
