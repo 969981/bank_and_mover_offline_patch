@@ -5,17 +5,13 @@ BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
 ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
-    (0x002D11C4,0x002D11C8,"DownloadSuccess callback marker hook"),
-    (0x00313910,0x00314008,"official runtime cave"),
-    (0x003ABA90,0x003ABFFC,"official core cave"),
+    (0x00313910,0x00314000,"official RX text-tail payload"),
 ]
-CAVES = [(0x00313910,0x00314008),(0x003ABA90,0x003ABFFC)]
+CAVES = [(0x00313910,0x00314000)]
 EXPECTED_SYMBOLS = {
-    "officialbulk_downloadmarkertrampoline":0x00313910,
-    "officialbulk_bankdatasyncdispatch":0x00313958,
-    "officialbulksync_process":0x0031398C,
-    "officialbulk_corestart":0x003ABA90,
-    "officialbulk_scratch":0x003ABFFC,
+    "officialbulk_bankdatasyncdispatch":0x00313910,
+    "officialbulk_commandbuffer":0x0031392C,
+    "officialbulksync_process":0x00313938,
 }
 
 def addr_slice(data,start,end):
@@ -64,8 +60,10 @@ def main():
         addr=CODE_BASE+i
         assert any(s<=addr<e for s,e,_ in ALLOWED), f"unexpected patched byte at {addr:08X}"
     assert addr_slice(base,0x002AF460,0x002AF464)!=addr_slice(patched,0x002AF460,0x002AF464)
-    assert addr_slice(base,0x002D11C4,0x002D11C8)!=addr_slice(patched,0x002D11C4,0x002D11C8)
-    assert addr_slice(patched,0x003ABFFC,0x003AC000)==addr_slice(base,0x003ABFFC,0x003AC000), "scratch must stay zero in file"
+    # The previous preview corrupted live mapped .data around 0x003ABA90. This
+    # verifier permanently forbids any byte changes in that whole region.
+    assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
+        "official-only patch must not modify mapped data/BSS image"
     syms=read_symbols(args.symbols)
     for name,addr in EXPECTED_SYMBOLS.items():
         assert syms.get(name)==addr, f"symbol {name} expected {addr:08X}, got {syms.get(name)}"
