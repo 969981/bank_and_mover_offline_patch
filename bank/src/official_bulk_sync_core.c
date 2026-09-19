@@ -36,7 +36,7 @@ OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned
     unsigned char *dst;
     unsigned i,index;
     int changed=0;
-    if (!runtimeBody || !bulkRecord || !meta || box>=BANK_V15_BOX_COUNT ||
+    if (!runtimeBody || !bulkRecord || box>=BANK_V15_BOX_COUNT ||
         slot>=BANK_V15_SLOTS_PER_BOX) return 0;
     dst=runtimeSlot(runtimeBody,box,slot);
     for (i=0;i<BANK_V15_PKM_SIZE;i++) if (dst[i]!=bulkRecord[i]) { changed=1; break; }
@@ -44,6 +44,13 @@ OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned
     for (i=0;i<BANK_V15_PKM_SIZE;i++) dst[i]=bulkRecord[i];
     if (OfficialBulk_RecordIsEmpty(bulkRecord)) return 1;
     index=box*BANK_V15_SLOTS_PER_BOX+slot;
+    if (!meta) {
+        /* HOME direct consumes PKHeX Bank7/PK7 canonical payload. There is no
+           selected Gen6/7 game, so only the format tag is authoritative here;
+           source/timestamp stay exactly as downloaded from the fresh server. */
+        runtimeBody[BANK_V15_TAG_START+index]=1u;
+        return 1;
+    }
     runtimeBody[BANK_V15_TAG_START+index]=meta->formatTag;
     runtimeBody[BANK_V15_SOURCE_START+index]=meta->sourceSoftware;
     writeU64LE(runtimeBody+BANK_V15_TIMESTAMP_START+index*8u,meta->timestamp);
@@ -66,7 +73,7 @@ OFFICIAL_BULK_API int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,cons
 {
     unsigned box,slot;
     const unsigned char *src;
-    if (!runtimeBody || !bulkBody || !meta || !OfficialBulk_IsSupportedSize(bulkSize)) return 0;
+    if (!runtimeBody || !bulkBody || !OfficialBulk_IsSupportedSize(bulkSize)) return 0;
     if (!OfficialBulk_ValidateHeader4(bulkBody+BANK_V15_VERSION_OFFSET)) return 0;
     for (box=0;box<BANK_V15_BOX_COUNT;box++) {
         src=bulkBody+BANK_V15_MAIN_BOX_START+box*BANK_V15_BOX_STRIDE;
