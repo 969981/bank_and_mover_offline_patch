@@ -128,7 +128,8 @@ static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
     r=FILE_GET_SIZE(&h,&size);
     if (r || !OfficialBulk_IsSupportedSize(size) ||
         !readExact(&h,BANK_V15_VERSION_OFFSET,header,sizeof(header)) || !OfficialBulk_ValidateHeader4(header)) {
-        if (h) (void)FILE_CLOSE(&h); return 0;
+        if (h) (void)FILE_CLOSE(&h);
+        return 0;
     }
     for (box=0;box<BANK_V15_BOX_COUNT;box++) {
         offset=BANK_V15_MAIN_BOX_START+(u64)box*BANK_V15_BOX_STRIDE;
