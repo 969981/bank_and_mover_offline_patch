@@ -80,15 +80,23 @@ int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,const unsigned char *b
 }
 #endif
 
-static char digit(unsigned value) { return (char)('0'+(value%10u)); }
+static char digit(unsigned value) { return (char)('0'+value); }
+static unsigned takeDigit(unsigned *value,unsigned place)
+{
+    unsigned d=0;
+    while (*value>=place) { *value-=place; d++; }
+    return d;
+}
 static void put2(char *p,unsigned value)
 {
-    p[0]=digit(value/10u); p[1]=digit(value);
+    p[0]=digit(takeDigit(&value,10u)); p[1]=digit(value);
 }
 static void put4(char *p,unsigned value)
 {
-    p[0]=digit(value/1000u); p[1]=digit(value/100u);
-    p[2]=digit(value/10u); p[3]=digit(value);
+    p[0]=digit(takeDigit(&value,1000u));
+    p[1]=digit(takeDigit(&value,100u));
+    p[2]=digit(takeDigit(&value,10u));
+    p[3]=digit(value);
 }
 
 int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize)
