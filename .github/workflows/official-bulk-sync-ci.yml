@@ -1,0 +1,50 @@
+name: official-bank-bulk-sync-ci
+
+on:
+  push:
+    branches:
+      - feature/official-bank-bulk-sync
+    paths:
+      - bank/src/official_bulk_sync.c
+      - bank/src/official_bulk_sync_core.c
+      - bank/src/official_bulk_sync.h
+      - bank/src/official_bulk_sync_host_test.c
+      - bank/src/main_official.s
+      - bank/src/Makefile
+      - bank/src/verify_official_bulk_sync.py
+      - .github/workflows/official-bulk-sync-ci.yml
+  workflow_dispatch:
+
+jobs:
+  compile-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ARM compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
+
+      - name: Run host merge contract test
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_bulk_sync_host_test.c \
+            bank/src/official_bulk_sync_core.c \
+            -o /tmp/official_bulk_sync_host_test
+          /tmp/official_bulk_sync_host_test
+
+      - name: Compile ARMv6K production objects
+        run: |
+          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -marm -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync.c -o /tmp/official_bulk_sync.o
+          arm-none-eabi-gcc $FLAGS -DOFFICIAL_BULK_RUNTIME -c bank/src/official_bulk_sync_core.c -o /tmp/official_bulk_sync_core.o
+          arm-none-eabi-objdump -h /tmp/official_bulk_sync.o
+          arm-none-eabi-objdump -h /tmp/official_bulk_sync_core.o
+
+      - name: Reject unexpected ARM runtime helpers
+        run: |
+          if arm-none-eabi-nm -u /tmp/official_bulk_sync.o /tmp/official_bulk_sync_core.o | grep -E '__aeabi_(u|i)div|__aeabi_(u|i)divmod'; then
+            echo 'unexpected division runtime dependency' >&2
+            exit 1
+          fi
