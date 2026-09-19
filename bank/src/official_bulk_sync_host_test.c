@@ -27,7 +27,6 @@ int main(void)
     unsigned idx;
     char path[48];
 
-    /* unchanged occupied slot: payload + historical metadata remain untouched */
     memset(slot(runtime,0,0),0x11,BANK_V15_PKM_SIZE);
     memset(slot(bulk,0,0),0x11,BANK_V15_PKM_SIZE);
     idx=index_of(0,0);
@@ -35,10 +34,8 @@ int main(void)
     runtime[BANK_V15_SOURCE_START+idx]=9;
     *(uint64_t *)(runtime+BANK_V15_TIMESTAMP_START+idx*8u)=55;
 
-    /* empty -> occupied: payload copied and stock-derived metadata written */
     memset(slot(bulk,0,1),0x22,BANK_V15_PKM_SIZE);
 
-    /* occupied -> occupied changed: payload and stock-derived metadata refreshed */
     memset(slot(runtime,0,2),0x33,BANK_V15_PKM_SIZE);
     memset(slot(bulk,0,2),0x44,BANK_V15_PKM_SIZE);
     idx=index_of(0,2);
@@ -46,14 +43,12 @@ int main(void)
     runtime[BANK_V15_SOURCE_START+idx]=6;
     *(uint64_t *)(runtime+BANK_V15_TIMESTAMP_START+idx*8u)=77;
 
-    /* occupied -> empty: payload clears but historical metadata is preserved */
     memset(slot(runtime,0,3),0x55,BANK_V15_PKM_SIZE);
     idx=index_of(0,3);
     runtime[BANK_V15_TAG_START+idx]=3;
     runtime[BANK_V15_SOURCE_START+idx]=4;
     *(uint64_t *)(runtime+BANK_V15_TIMESTAMP_START+idx*8u)=99;
 
-    /* box metadata comes from bulk */
     memset(runtime+BANK_V15_MAIN_BOX_START+BANK_V15_BOX_PKM_BYTES,0x66,BANK_V15_BOX_META_SIZE);
     memset(bulk+BANK_V15_MAIN_BOX_START+BANK_V15_BOX_PKM_BYTES,0x77,BANK_V15_BOX_META_SIZE);
 
@@ -96,6 +91,11 @@ int main(void)
     assert(OfficialBulk_FormatTagForProfile(8)==1);
     assert(OfficialBulk_FormatTagForProfile(0)==0xFF);
     assert(OfficialBulk_FormatTagForProfile(9)==0xFF);
+
+    assert(OfficialBulk_ShouldProcessState(2u,1u,0u)==1);
+    assert(OfficialBulk_ShouldProcessState(2u,1u,1u)==0);
+    assert(OfficialBulk_ShouldProcessState(2u,0u,0u)==0);
+    assert(OfficialBulk_ShouldProcessState(3u,1u,0u)==0);
 
     free(runtime); free(bulk);
     return 0;
