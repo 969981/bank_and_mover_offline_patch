@@ -2,11 +2,17 @@
 #define BANK_BULK_IMPORT_H
 
 #define BANK_V15_SIZE 0xBB518u
+#define BANK_G7_PKHEX_VIEW_SIZE 0xACA48u
 #define BANK_V15_VERSION_OFFSET 0x15Cu
 #define BANK_V15_BOX_COUNT_OFFSET 0x15Eu
 #define BANK_V15_MAIN_BOX_START 0x17Cu
 #define BANK_V15_MAIN_BOX_END 0xAAF14u
 #define BANK_V15_MAIN_BOX_SIZE (BANK_V15_MAIN_BOX_END-BANK_V15_MAIN_BOX_START)
+
+static inline int BankBulk_IsSupportedInputSize(unsigned long long size)
+{
+    return size==BANK_V15_SIZE || size==BANK_G7_PKHEX_VIEW_SIZE;
+}
 
 static inline int BankBulk_ValidateHeader4(const unsigned char header[4])
 {
