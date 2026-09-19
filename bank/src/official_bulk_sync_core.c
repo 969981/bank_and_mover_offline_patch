@@ -126,5 +126,5 @@ OFFICIAL_BULK_API unsigned char OfficialBulk_FormatTagForProfile(unsigned profil
 
 OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned callbackStatus,unsigned specialFlag)
 {
-    return substate==2u && callbackStatus==1u && specialFlag==0u;
+    return substate==2u && callbackStatus==1u && specialFlag<=1u;
 }
