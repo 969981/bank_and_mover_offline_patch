@@ -45,9 +45,6 @@ OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned
     if (OfficialBulk_RecordIsEmpty(bulkRecord)) return 1;
     index=box*BANK_V15_SLOTS_PER_BOX+slot;
     if (!meta) {
-        /* HOME direct consumes PKHeX Bank7/PK7 canonical payload. There is no
-           selected Gen6/7 game, so only the format tag is authoritative here;
-           source/timestamp stay exactly as downloaded from the fresh server. */
         runtimeBody[BANK_V15_TAG_START+index]=1u;
         return 1;
     }
@@ -133,5 +130,6 @@ OFFICIAL_BULK_API unsigned char OfficialBulk_FormatTagForProfile(unsigned profil
 
 OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned callbackStatus,unsigned specialFlag)
 {
-    return substate==2u && callbackStatus==1u && specialFlag<=1u;
+    if (substate!=2u || callbackStatus!=1u || specialFlag>1u) return 0;
+    return specialFlag?2:1;
 }
