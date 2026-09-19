@@ -4,21 +4,24 @@
 
 ## Official Bulk Sync（当前 feature 分支）
 
-- **[Official Bulk Sync 详细技术文档](official-bank-bulk-sync-technical.zh-cn.md)**：state 16 时序、两个 Hook、runtime BankObject、fresh backup、slot merge、tag/source/timestamp stock 生成链、code cave、verifier、故障模型与 D6H 在线验证计划。
+- **[Official Bulk Sync 详细技术文档 V2](official-bank-bulk-sync-technical-v2.zh-cn.md)**：2026-09-19 修正版；说明 SM/USUM 存档列表消失的 `.data cave` 根因、单 Hook/native-state gate、Thumb RX text-tail payload、fresh backup、slot merge、metadata writer、verifier 与 D6H 在线验证计划。
 - [Official Bulk Sync 设计契约](official-bank-bulk-sync-design.zh-cn.md)：不可变只读 `bulk_import.bin`、data-only 输入、原版上传事务保持不变、HOME 排除等硬性设计约束。
+- [旧 V1 技术记录](official-bank-bulk-sync-technical.zh-cn.md)：保留作为开发历史；其中“双 Hook + data/scratch cave”已经被 V2 废弃，**不要再按 V1 构建或判断安全边界**。
 
-当前 `feature/official-bank-bulk-sync` 已实现并静态验证：
+当前 `feature/official-bank-bulk-sync` 的修正版架构：
 
 ```text
-原版普通 Bank 联网下载
-→ fresh BankObject
-→ timestamp backup
+原版 Bank 联网/游戏识别
+→ BankDataSyncState_Update 原生状态判断
+→ fresh BankObject backup
 → 只读 bulk_import.bin
 → slot-aware Pokémon merge
 → stock-derived tag/source/timestamp
 → 原版 Bank UI
 → 用户原版保存流程
 ```
+
+当前只修改一个原版执行点和真正的 RX text 尾部，不再向 mapped `.data` / BSS 写入代码。
 
 **尚未完成的关键证据是官方服务器 Save → redownload round-trip。** 必须先从 1 Pokémon 开始验证，再扩大到 30 / 300 / 3000。
 
