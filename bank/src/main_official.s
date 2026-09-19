@@ -15,6 +15,19 @@
 .org BankDataSyncState_Update
     b OfficialBulk_BankDataSyncDispatch
 
+// Stock ordinary-Bank flow sets r0=12 here after a successful state-16 Bank
+// download. State 12 is RewardEligibility and may enter state 13
+// RewardReceive, which displays low-points, claimable-points, first-present,
+// and related mileage/reward UI. Keep all mileage/reward data untouched and
+// bypass only those UI states by selecting the stock Bank Box state (25).
+//
+// 原版普通 Bank 在 state 16 下载成功后会在这里将下一状态设为 12
+//（里程/奖励资格判断），并可能继续进入 state 13（奖励领取），显示点数不足、
+// 可领取、首次奖励等界面。这里只把下一状态改为原版 Bank Box state 25：
+// 不领取、不清零、不修改服务器里程/奖励数据，也不改 state 12/13 本体。
+.org BankFlow_SelectNextState + 0x248
+    moveq r0,#25
+
 .org OfficialBulk_CodeStart
 .area OfficialBulk_CodeEnd-OfficialBulk_CodeStart
 .arm
