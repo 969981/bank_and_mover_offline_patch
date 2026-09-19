@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/official-bank-bulk-sync
+      - feature/home-direct-bulk-sync
     paths:
       - bank/src/official_bulk_sync.c
       - bank/src/official_bulk_sync_core.c
