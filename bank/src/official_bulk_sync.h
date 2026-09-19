@@ -40,7 +40,9 @@ enum {
 };
 
 OFFICIAL_BULK_API int OfficialBulk_IsSupportedSize(unsigned long long size);
+#ifndef OFFICIAL_BULK_RUNTIME
 OFFICIAL_BULK_API int OfficialBulk_ValidateHeader4(const unsigned char header[4]);
+#endif
 OFFICIAL_BULK_API int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE]);
 OFFICIAL_BULK_API int OfficialBulk_MergeSlot(unsigned char *runtimeBody,unsigned box,unsigned slot,
     const unsigned char bulkRecord[BANK_V15_PKM_SIZE],const OfficialBulkMetadata *meta);
