@@ -64,10 +64,12 @@ HOME 路径没有当前联动游戏，因此不能调用 selected-game profile �
 
 ## 5. State 29：official commit gate
 
-State 29 原版 substate 0 仍然原样创建远端 job。只有 `HOME_BULK_DIRTY=1` 且原版进入 substate 1 时，补丁才接管：
+State 29 原版 substate 0 仍然原样创建远端 job。只有 `HOME_BULK_DIRTY=1` 且原版进入 substate 1 时，补丁才接管。
+
+Bank v1.5 当前格式对象的 `object+8` 就是稳定的 `0xBB518` serialized body，因此 preview 不再分配第二份 staging buffer，也不再额外调用一次整块 serialize-copy：
 
 ```text
-serialize runtime BankObject (0xBB518)
+runtime BankObject + 8
   → BankRemote_StageFileUpdate / 0x002A2504
   → 等待 stock callback
   → BankRemote_CommitStagedUpdate / 0x001D5D74
@@ -107,7 +109,7 @@ State29 substate = 1
 0x00313910 .. 0x00314000  RX text tail payload
 ```
 
-映射 `.data` 镜像不允许静态修改。`0x003ABFF8/0x003ABFFC` 仅作为运行时 scratch（buffer pointer / dirty state）。
+映射 `.data` 镜像不允许静态修改。当前只使用 `0x003ABFFC` 作为运行时 dirty-state scratch；IPS 不静态写入该字节。
 
 ## 8. 测试门槛
 
