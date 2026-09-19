@@ -1,260 +1,345 @@
-# Official Bank Bulk Sync 设计（feature/official-bank-bulk-sync）
+# Official Bank Bulk Sync 设计与实现（feature/official-bank-bulk-sync）
 
 ## 目标
 
-在不保留用户可见 Offline / Download Mode 的最终路线中，完全沿用 Pokémon Bank 原版联网流程：
+最终版本不再提供用户可见的 Offline / Download Mode，而是完全沿用 Pokémon Bank 原版联网流程：
 
-1. 正常登录官方服务；
+1. 正常启动、登录官方服务；
 2. 正常选择任意兼容游戏；
-3. state 16 下载官方 fresh BankObject；
-4. 在进入原版 Bank Box UI 前自动备份 fresh BankObject；
-5. 若存在 `SD:/3ds/Bank/bulk_import.bin`，将其中的 100 个主 Bank Box Pokémon/Box 数据合并到 runtime BankObject；
-6. 用户在原版 Bank UI 中检查；
-7. 用户执行原版“保存并退出”；
-8. 完全沿用原版 PrepareUpdate / HPP upload / CompleteUpdate / rollback；
-9. 后续正常进入 HOME transfer 路径。
+3. 普通 Bank 路径 state 16 下载 fresh BankObject；
+4. 在任何 bulk 修改前备份完整 fresh BankObject；
+5. 若存在 `SD:/3ds/Bank/bulk_import.bin`，将其中主 100 Box 合并进 runtime BankObject；
+6. changed occupied slot 的 tag/source/timestamp 使用当前联动游戏与原版时间链生成；
+7. 用户进入原版 Bank Box UI 自行检查；
+8. 用户执行原版“保存并退出”；
+9. 原版 `PrepareUpdate / HPP upload / CompleteUpdate / rollback` 全部保持不变；
+10. 后续正常进入 HOME transfer。
 
 ## 强制契约
 
-### 1. `bulk_import.bin` 是只读输入
+### `bulk_import.bin` 永远只读
 
-`bulk_import.bin` 永远只读。
+无论 Apply、保存成功、保存失败、rollback、退出或重启，补丁都不得删除、改名、覆盖或写回：
 
-无论：
+```text
+SD:/3ds/Bank/bulk_import.bin
+```
 
-- Apply 成功；
-- 保存成功；
-- 保存失败；
-- rollback；
-- 用户退出；
-- 重启 Bank；
+如果文件继续存在，每次普通 game-linked Bank 下载完成后都会再次执行同一合并；是否移走由用户自己决定。
 
-补丁都不得：
+### `bulk_import.bin` 只提供 100 Box 数据
 
-- 删除 `bulk_import.bin`；
-- 重命名 `bulk_import.bin`；
-- 覆盖 `bulk_import.bin`；
-- 向 `bulk_import.bin` 回写任何 metadata；
-- 生成 `bulk_import_uploaded_*.bin` 之类归档副本。
+支持：
 
-用户可长期保留同一个 `bulk_import.bin` 并重复使用。
+- `0xACA48`：PKHeX `Bank7` view；
+- `0xBB518`：完整 Bank v1.5 image。
 
-### 2. `bulk_import.bin` 只提供主 100 Box 数据
-
-支持两种输入大小：
-
-- `0xACA48`：PKHeX `Bank7` 兼容视图；
-- `0xBB518`：完整 Bank v1.5 镜像。
-
-但无论输入是哪一种，联网路线都只信任并读取：
+两种形式都只读取：
 
 ```text
 0x00017C .. 0x0AAF14
 ```
 
-即 100 个主 Bank Box：
+即：
 
-- 30 × `0xE8` Pokémon slot；
-- 每盒 `0x26` Box metadata。
+```text
+100 × (
+    30 × 0xE8 Pokémon
+  + 0x26 Box metadata
+)
+```
 
-`bulk_import.bin` 中下列 current-only metadata 一律不作为权威来源：
+bulk 中以下内容永远不是权威来源：
 
-- Bank slot format tag；
-- source software ID；
-- per-slot timestamp；
-- Transfer Box metadata；
+- slot format tag；
+- source software；
+- timestamp；
+- Header / identity；
+- Transfer Box；
 - source summaries；
-- NKZT block；
+- NKZT；
 - counters；
-- tail flags；
-- account/header/remote identifiers。
+- tail；
+- remote/session/transaction 数据。
 
-## runtime BankObject 合并模型
+## runtime 合并模型
 
 ```text
 fresh server BankObject
         +
-bulk_import main 100 Boxes
+bulk main 100 Boxes
         +
-metadata writer (runtime/session derived)
+stock-derived metadata context
         =
 runtime candidate BankObject
 ```
 
-### 永远保留 fresh server/runtime 的区域
+### slot-aware writer
 
-- Header / identity-bound fields；
-- remote content identifiers；
-- Transfer Box；
-- source summaries；
-- NKZT block；
-- counters；
-- tail；
-- 所有未知 account/session-bound 数据。
+对每个槽比较 fresh server payload 与 bulk payload：
 
-### 主 Box Pokémon/Box metadata
+| 情况 | Pokémon payload | tag/source/timestamp |
+|---|---|---|
+| unchanged | 保留 server | 全部保留 server |
+| empty -> occupied | 写 bulk | 生成当前联动游戏 metadata |
+| occupied -> occupied changed | 写 bulk | 刷新当前联动游戏 metadata |
+| occupied -> empty | 清 payload | 保留历史 server metadata |
+| empty -> empty | 保持空 | 保留 server metadata |
 
-由 `bulk_import.bin` 覆盖。
+其中 occupied -> empty 保留历史 metadata，符合真实 Bank 样本中“空槽仍残留 tag/source/timestamp”的观察。
 
-## slot-aware metadata writer
+## 原版 metadata 生成链
 
-对每个 slot 比较：
+本实现不从 `bulk_import.bin` 复制 current-only metadata，而是复用对原版 `GameBank_SwapSelection` (`0x002B9C94`) 的逆向结论。
 
-```text
-fresh server slot
-vs
-bulk slot
-```
-
-V1 策略：
-
-### unchanged
-
-Pokémon payload 完全相同：
-
-- Pokémon：保持；
-- tag：保持 fresh server；
-- source：保持 fresh server；
-- timestamp：保持 fresh server。
-
-### empty -> occupied
-
-- 写入 bulk Pokémon；
-- tag：按 stock-like insert 规则生成；
-- source：取当前联动游戏 software ID；
-- timestamp：取当前时间，编码采用已研究的 Bank timestamp 格式。
-
-### occupied -> occupied（payload changed）
-
-- 写入 bulk Pokémon；
-- tag：按 stock-like replace 规则生成；
-- source：更新为当前联动游戏 software ID；
-- timestamp：刷新为当前时间。
-
-### occupied -> empty
-
-- 清 Pokémon payload；
-- V1 默认保留 fresh server 的 tag/source/timestamp，符合现有真实样本中“空槽仍保留历史 metadata”的观察；
-- 如后续 stock 行为实验得到更精确规则，再替换此策略。
-
-### empty -> empty
-
-- 保留 fresh server metadata，不主动清零。
-
-## 官方流程 Hook 原则
-
-### Apply 仅允许 normal game-linked Bank 路径
-
-允许：
+### 当前游戏 profile
 
 ```text
-state 16
+registry slot = 0x003AB90C
+registry      = *(u32*)slot
+model         = FUN_00233A6C(*(registry + 0x1C))
+profile       = *(u8*)(model + 8)
 ```
 
-禁止：
+profile：
 
 ```text
-state 28 / HOME transfer full download
+1 X
+2 Y
+3 Omega Ruby
+4 Alpha Sapphire
+5 Sun
+6 Moon
+7 Ultra Sun
+8 Ultra Moon
 ```
 
-因此 HOME 路径绝不再次 Apply `bulk_import.bin`。
+### format tag
 
-### 不在 async download callback 中执行 SD I/O
-
-`BankRemote_DownloadSuccessCallback (0x002D11B0)` 只作为“官方下载完成”的证据点。
-
-实际 backup + bulk apply 应放在：
+原版 profile 分支与现有真实样本一致：
 
 ```text
-BankDataSyncState_Update (0x002AF460)
+profile 1..4 -> tag 0
+profile 5..8 -> tag 1
 ```
 
-中，位于：
+### source software
+
+原版使用当前联动游戏的 source object，而不是 Pokémon 的 Origin Game：
 
 ```text
-fresh BankObject 已装载
-→ stock sync 完成
-→ [custom backup/apply substate]
-→ state 25 Bank Box UI
+Gen6 profile 1..4: model + 0x129AC
+Gen7 profile 5..8: model + 0x74304
 ```
 
-## fresh server Bank 自动备份
+然后调用该对象 vtable `+0x0C`（第 3 项函数）取得 `u8 sourceSoftware`。
 
-每次 state 16 官方 BankObject 下载成功、且在任何 bulk 修改之前，保存完整 `0xBB518`：
+### timestamp
+
+沿用原版写 Bank slot metadata 的时间链：
+
+```text
+TIME_CONTAINER_INIT 0x00234648
+TIME_QUERY          0x001D3BF4
+TIME_PACK           0x001F2BD4
+```
+
+即：
+
+```text
+TIME_CONTAINER_INIT(temp)
+TIME_QUERY(*(BankRoot + 0x138), temp)
+timestamp = TIME_PACK(temp)
+```
+
+同一次 bulk apply 中 changed occupied slots 共用同一个 stock-derived timestamp，与原版批量 deposit 的行为一致。
+
+## state 16 Hook 架构
+
+不在 async success callback 中做 SD I/O。
+
+### Hook 1：下载成功只设置 pending marker
+
+位置：
+
+```text
+BankRemote_DownloadSuccessCallback + 0x14
+= 0x002D11C4
+```
+
+Hook 保存寄存器和 CPSR，只检查：
+
+```text
+[r4 + 0x41]
+```
+
+只有普通 game-linked Bank 下载 (`== 0`) 才设置 pending byte。
+
+HOME/full-transfer 回调不会设置 pending，因此 state 28 不会触发 bulk apply。
+
+被覆盖的原版指令：
+
+```asm
+ldr r8, =0x000BB528
+```
+
+在 trampoline 末尾原样重放。
+
+### Hook 2：下一次 BankDataSync update 执行 backup/apply
+
+位置：
+
+```text
+BankDataSyncState_Update
+= 0x002AF460
+```
+
+流程：
+
+```text
+replay native push {r4-r6,lr}
+        ↓
+读取 pending marker
+        ↓
+无 pending -> 直接回原版 +4
+        ↓
+有 pending -> 清 marker
+        ↓
+OfficialBulkSync_Process(state)
+        ↓
+回原版 BankDataSyncState_Update +4
+```
+
+因此网络回调返回以后才进行同步 SD I/O。
+
+## fresh server 备份
+
+在 Apply 之前写完整 `0xBB518`：
 
 ```text
 SD:/3ds/Bank/bankdata_YYYYMMDD_HHMMSS.bin
 ```
 
-并可额外维护：
+当前文件名的年月日时分来自 fresh Bank header，秒字段优先采用本次 stock timestamp 的秒值。
+
+如果 backup 写入失败：
 
 ```text
-SD:/3ds/Bank/bankdata_server_latest.bin
+不 Apply bulk
+继续原版流程
 ```
 
-备份文件来源必须是“刚下载、尚未 Apply bulk”的 fresh server BankObject。
-
-## 原版上传事务保持完全不变
-
-补丁不得生成、复用或持久化：
-
-- `dataId`；
-- `curVersion` / `updateVersion`；
-- `transactionPassword`；
-- `applicationId`；
-- signed URL；
-- HTTP headers/form fields；
-- login/auth/session state。
-
-用户执行原版保存后继续走 stock：
+如果 bulk streaming 过程中 short-read / I/O failure 且 runtime 可能已经部分修改：
 
 ```text
-BankSaveState_Update
-→ BankSave_SerializeAndStage
-→ BankRemote_StageFileUpdate
-→ PrepareUpdateBankObject
-→ stock HTTP/HPP upload
-→ CompleteUpdateBankObject
-→ Commit / Rollback
+从刚写出的 timestamp backup 重新读取完整 0xBB518
+恢复 fresh server BankObject
+然后继续原版流程
 ```
 
-## `bulk_import.bin` 生命周期
+`bulk_import.bin` 始终以 `OPEN_READ` 打开，没有任何 write/rename/delete 路径。
 
-由于该文件强制只读：
+## official-only patch 边界
+
+这个 feature 分支的默认构建不再使用旧 Route A Preview 的 Offline/Download UI。
+
+实际只修改两个原版 Hook，以及两个经验证的全零 code cave：
 
 ```text
-Apply 前存在
-→ Apply
-→ 保存成功
-→ 仍保持原样存在
+0x002AF460 .. 0x002AF464  BankDataSyncState_Update hook
+0x002D11C4 .. 0x002D11C8  DownloadSuccess marker hook
+0x00313910 .. 0x00314008  runtime adapter/code cave
+0x003ABA90 .. 0x003ABFFC  merge core/code cave
 ```
 
-所以每次重新进入 normal game-linked Bank，如果该文件仍存在，将再次执行相同 Apply。
+pending scratch：
 
-这属于设计行为，不是错误。
+```text
+0x003ABFFC
+```
 
-如果用户不希望下次再次 Apply，应由用户自行移走/删除/改名；补丁绝不自动处理该文件。
+该字节只在运行期使用，静态 IPS 不写入它。
 
-## D6 开发拆分
+因此以下原版代码在当前构建中保持 byte-identical：
 
-- D6A：恢复/保持原版联网入口，不依赖 Offline/Download Mode UI；
-- D6B：state 16 fresh BankObject 自动备份；
-- D6C：state 16 → custom BulkApply substate；
+- 标题界面；
+- Bank 菜单；
+- 网络登录/认证；
+- state 7 save transaction；
+- `BankSave_SerializeAndStage`；
+- `BankRemote_StageFileUpdate`；
+- PrepareUpdate/HPP/CompleteUpdate；
+- rollback；
+- HOME state 28。
+
+## 构建结构
+
+新默认 Makefile：
+
+```text
+bank/src/Makefile
+```
+
+构建：
+
+```text
+official_bulk_sync.c
+        -> official_bulk_sync.o
+
+official_bulk_sync_core.c
+        -> official_bulk_sync_core.o
+
+main_official.s
+        + 两个 object
+        -> patched .code
+        -> code.ips
+```
+
+旧 Scheme B / Offline-Download Preview 的构建规则保留在：
+
+```text
+bank/src/Makefile.route-a-preview
+```
+
+## 自动测试与静态验证
+
+### host contract test
+
+`official_bulk_sync_host_test.c` 覆盖：
+
+- unchanged 保留 metadata；
+- empty -> occupied 生成 metadata；
+- occupied changed -> occupied 刷新 metadata；
+- occupied -> empty 保留历史 metadata；
+- Box metadata 来自 bulk；
+- timestamp backup filename；
+- Gen6/Gen7 profile -> format tag 映射。
+
+### static verifier
+
+`verify_official_bulk_sync.py` 会检查：
+
+1. base SHA-256 必须是已确认的 Bank v1.5 `.code`；
+2. 两个 code cave 在 base 中必须全零；
+3. patched image 的每一个 changed byte 都必须落在四个允许区间；
+4. pending scratch 静态仍为 0；
+5. 关键符号地址一致；
+6. `code.ips` 重放后必须逐字节得到 patched `.code`。
+
+## 当前实现状态
+
+已实现：
+
+- D6A：official-only 原版联网入口；
+- D6B：普通 Bank fresh download 后完整 timestamp backup；
+- D6C：state 16 pending -> backup/apply；
 - D6D：slot-aware metadata writer；
-- D6E：保证 state 7 原版保存事务不变；
-- D6F：明确 `bulk_import.bin` 全生命周期只读；
-- D6G：明确排除 state 28 / HOME；
-- D6H：官方服务器 round-trip 分级验证：1 → 30 → 300 → 3000。
+- D6E：stock save transaction 不打补丁；
+- D6F：`bulk_import.bin` 强制只读；
+- D6G：HOME/state 28 由 callback marker 条件排除。
 
-## 第一阶段验收
+仍待实机/服务器验证：
 
-在不自动执行官方保存的情况下：
+- D6H：官方 round-trip：1 -> 30 -> 300 -> 3000。
 
-1. 正常联网进入 Bank；
-2. state 16 下载官方 Bank；
-3. SD 产生 fresh server timestamp backup；
-4. runtime Bank UI 显示 bulk 的主 100 Box；
-5. `bulk_import.bin` SHA-256 前后完全一致；
-6. HOME/state 28 路径不触发 Apply。
-
-完成后再进行单 Pokémon 的官方 Save + redownload round-trip。
+第一轮实机测试只能从 1 个 changed Pokémon 开始，保存成功后必须重新登录官方下载 server-after 做结构化 diff，再逐级扩大。
