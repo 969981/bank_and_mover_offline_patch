@@ -17,8 +17,14 @@ enum { ARCHIVE_SDMC=9, PATH_EMPTY=1, PATH_ASCII=3, OPEN_READ=1, OPEN_WRITE=2, OP
 #define TIME_CONTAINER_INIT ((TimeContainerInit)0x00234648u)
 #define TIME_QUERY ((TimeQuery)0x001D3BF4u)
 #define TIME_PACK ((TimePack)0x001F2BD4u)
+#define ALLOC_BUFFER ((AllocBuffer)0x00234168u)
+#define FREE_BUFFER ((FreeBuffer)0x00230994u)
+#define STAGE_FILE_UPDATE ((StageFileUpdate)0x002A2504u)
+#define COMPLETE_UPDATE ((TransactionUpdate)0x001D5D74u)
+#define ROLLBACK_UPDATE ((TransactionUpdate)0x001D5C28u)
 #define GAME_REGISTRY_SLOT ((volatile u32 *)0x003AB90Cu)
 #define BANK_ROOT_SLOT ((volatile u32 *)0x003AB938u)
+#define HOME_BULK_BUFFER ((volatile u32 *)0x003ABFF8u)
 #define HOME_BULK_DIRTY ((volatile u8 *)0x003ABFFCu)
 #define BANK_OBJECT_VTABLE 0x003626FCu
 
@@ -32,6 +38,11 @@ typedef void (*TimeContainerInit)(void *);
 typedef int (*TimeQuery)(void *,void *);
 typedef u64 (*TimePack)(void *);
 typedef u8 (*SourceSoftwareGetter)(void *);
+typedef void *(*AllocBuffer)(void *,u32);
+typedef void (*FreeBuffer)(void *);
+typedef int (*StageFileUpdate)(void *,void *,u32,void *);
+typedef int (*TransactionUpdate)(void *,void *,u32);
+typedef void (*BankSerialize)(void *,void *);
 
 static const char emptyPath[1]={0};
 static const char bulkPath[]="/3ds/Bank/bulk_import.bin";
@@ -76,6 +87,15 @@ static int restoreSnapshot(const char *path,u32 pathSize,u8 *body)
     if (h) closeResult=FILE_CLOSE(&h);
     return !r && !closeResult && n==BANK_V15_SIZE &&
         OfficialBulk_ValidateHeader4(body+BANK_V15_VERSION_OFFSET);
+}
+
+static u8 *bankObjectFromState(u8 *state)
+{
+    u8 *flow,*object;
+    if (!state) return 0;
+    flow=*(u8 **)(state+8);
+    object=flow?*(u8 **)(flow+0xCC):0;
+    return object && *(u32 *)object==BANK_OBJECT_VTABLE?object:0;
 }
 
 static int queryMetadata(OfficialBulkMetadata *meta)
@@ -144,10 +164,105 @@ static int applyBulkFile(u8 *body,const OfficialBulkMetadata *meta)
     return closeResult?-1:1;
 }
 
+static void clearHomeCallback(u8 *state)
+{
+    state[0x40]=0; state[0x41]=0;
+}
+
+static void freeHomeBuffer(void)
+{
+    void *p=(void *)(*HOME_BULK_BUFFER);
+    if (p) FREE_BUFFER(p);
+    *HOME_BULK_BUFFER=0;
+}
+
+static int startHomeRollback(u8 *state)
+{
+    clearHomeCallback(state);
+    if (ROLLBACK_UPDATE(*(void **)(state+0x3C),*(void **)(state+0x28),0u)) {
+        *(u32 *)(state+0x10)=0x82u;
+        return 1;
+    }
+    return 0;
+}
+
+static void finishHomeCommitError(u8 *state)
+{
+    u8 *object=bankObjectFromState(state);
+    char path[48];
+    if (object && OfficialBulk_BuildBackupPath(object+8,path,sizeof(path)))
+        (void)restoreSnapshot(path,39u,object+8);
+    freeHomeBuffer();
+    *HOME_BULK_DIRTY=0;
+    clearHomeCallback(state);
+    *(u32 *)(state+0x10)=4u;
+}
+
+__attribute__((used,noinline,section(".text.official")))
+int OfficialBulkHomeCommit_Process(void *stateVoid)
+{
+    u8 *state=(u8 *)stateVoid,*object;
+    void *buffer;
+    u32 *vtable;
+    BankSerialize serialize;
+    int action;
+
+    if (!state) return 0;
+    action=OfficialBulk_HomeCommitAction(*(u32 *)(state+0x10),*HOME_BULK_DIRTY,
+        state[0x40],state[0x41]);
+    if (action==OFFICIAL_HOME_COMMIT_NATIVE) return 0;
+    if (action==OFFICIAL_HOME_COMMIT_WAIT) return 1;
+    if (action==OFFICIAL_HOME_COMMIT_START_STAGE) {
+        object=bankObjectFromState(state);
+        if (object) {
+            buffer=ALLOC_BUFFER(*(void **)(state+0x0C),BANK_V15_SIZE);
+            if (buffer) {
+                *HOME_BULK_BUFFER=(u32)buffer;
+                vtable=*(u32 **)object;
+                serialize=(BankSerialize)vtable[2];
+                serialize(object,buffer);
+                clearHomeCallback(state);
+                if (STAGE_FILE_UPDATE(*(void **)(state+0x3C),buffer,BANK_V15_SIZE,
+                    *(void **)(state+0x28))) {
+                    *(u32 *)(state+0x10)=0x80u;
+                    return 1;
+                }
+            }
+        }
+        if (startHomeRollback(state)) return 1;
+        finishHomeCommitError(state);
+        return 1;
+    }
+    if (action==OFFICIAL_HOME_COMMIT_START_COMMIT) {
+        clearHomeCallback(state);
+        if (COMPLETE_UPDATE(*(void **)(state+0x3C),*(void **)(state+0x28),0u)) {
+            *(u32 *)(state+0x10)=0x81u;
+            return 1;
+        }
+        if (startHomeRollback(state)) return 1;
+        finishHomeCommitError(state);
+        return 1;
+    }
+    if (action==OFFICIAL_HOME_COMMIT_START_ROLLBACK) {
+        if (startHomeRollback(state)) return 1;
+        finishHomeCommitError(state);
+        return 1;
+    }
+    if (action==OFFICIAL_HOME_COMMIT_FINISH_SUCCESS) {
+        freeHomeBuffer();
+        *HOME_BULK_DIRTY=0;
+        clearHomeCallback(state);
+        *(u32 *)(state+0x10)=3u;
+        return 1;
+    }
+    finishHomeCommitError(state);
+    return 1;
+}
+
 __attribute__((used,noinline,section(".text.official")))
 int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
 {
-    u8 *state=(u8 *)stateVoid,*flow,*object,*body;
+    u8 *state=(u8 *)stateVoid,*object,*body;
     OfficialBulkMetadata meta={0u,0u,0u};
     char backupPath[48];
     int applyResult,haveMeta=0,mode;
@@ -155,10 +270,9 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
     if (!state || !commandBuffer) return 0;
     mode=OfficialBulk_ShouldProcessState(*(u32 *)(state+0x10),state[0x40],state[0x41]);
     if (!mode) return 0;
-    if (mode==2) *HOME_BULK_DIRTY=0;
-    flow=*(u8 **)(state+8);
-    object=flow?*(u8 **)(flow+0xCC):0;
-    if (!object || *(u32 *)object!=BANK_OBJECT_VTABLE) return 0;
+    if (mode==2) { *HOME_BULK_DIRTY=0; *HOME_BULK_BUFFER=0; }
+    object=bankObjectFromState(state);
+    if (!object) return 0;
     body=object+8;
     if (!OfficialBulk_ValidateHeader4(body+BANK_V15_VERSION_OFFSET)) return 0;
     if (mode==1) haveMeta=queryMetadata(&meta);
