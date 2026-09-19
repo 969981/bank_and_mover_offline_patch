@@ -1,4 +1,4 @@
-.PHONY: all clean verify FORCE
+.PHONY: all clean verify FORCE host-test
 
 export MSYS2_ARG_CONV_EXCL := *
 
@@ -18,51 +18,41 @@ PATCHED := $(BUILD)/00040000000C9B00.dec.code
 RELEASE_ROOT := $(TARGET_ROOT)/../release
 RELEASE_TITLE := $(RELEASE_ROOT)/$(TITLE_ID)
 RELEASE_IPS := $(RELEASE_TITLE)/code.ips
-RELEASE_ROMFS := $(RELEASE_TITLE)/romfs
-ROMFS_SOURCE ?= $(TARGET_ROOT)/rom/romfs
-BASE_OBJECT := $(BUILD)/patch-base.o
-BULK_OBJECT := $(BUILD)/bulk_import.o
-OBJECT := $(BUILD)/patch.o
-DISASSEMBLY := $(BUILD)/patch.disasm.txt
-SYMBOLS := $(BUILD)/armips-symbols.txt
+RUNTIME_OBJECT := $(BUILD)/official_bulk_sync.o
+CORE_OBJECT := $(BUILD)/official_bulk_sync_core.o
+SYMBOLS := $(BUILD)/official-armips-symbols.txt
 
 CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
-LD := $(DEVKITARM)/bin/arm-none-eabi-ld
-OBJDUMP := $(DEVKITARM)/bin/arm-none-eabi-objdump
 CFLAGS := -std=c11 -Os -march=armv6k -mtune=mpcore -marm -mfloat-abi=soft \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables \
 	-fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common \
 	-ffunction-sections -fdata-sections -Wall -Wextra -Werror
 
-all: $(RELEASE_IPS) layeredfs verify
+all: $(RELEASE_IPS) verify
 
 $(BUILD):
 	mkdir -p "$@"
 
-$(BASE_OBJECT): patch.c | $(BUILD)
-	"$(CC)" $(CFLAGS) -DOfflinePatch_LoadBankData=OfflinePatch_LoadBankData_Base -c "$<" -o "$@"
-
-$(BULK_OBJECT): bulk_import.c bulk_import.h | $(BUILD)
+$(RUNTIME_OBJECT): official_bulk_sync.c official_bulk_sync.h | $(BUILD)
 	"$(CC)" $(CFLAGS) -c "$<" -o "$@"
 
-$(OBJECT): $(BASE_OBJECT) $(BULK_OBJECT)
-	"$(LD)" -r -o "$@" $(BASE_OBJECT) $(BULK_OBJECT)
-	"$(OBJDUMP)" -dr -z "$@" > "$(DISASSEMBLY)"
+$(CORE_OBJECT): official_bulk_sync_core.c official_bulk_sync.h | $(BUILD)
+	"$(CC)" $(CFLAGS) -DOFFICIAL_BULK_RUNTIME -c "$<" -o "$@"
 
-$(PATCHED): FORCE main.s $(OBJECT) $(BASE)
-	"$(ARMIPS)" -erroronwarning -stat -sym "$(SYMBOLS)" main.s
+$(PATCHED): FORCE main_official.s $(RUNTIME_OBJECT) $(CORE_OBJECT) $(BASE)
+	"$(ARMIPS)" -erroronwarning -stat -sym "$(SYMBOLS)" main_official.s
 
 $(RELEASE_IPS): $(PATCHED)
 	mkdir -p "$(dir $@)"
 	rm -f "$@"
 	"$(IPS_TOOL)" --create --ips "$(BASE)" "$(PATCHED)" "$@"
 
-layeredfs: patch_messages.py
-	rm -rf "$(RELEASE_ROMFS)"
-	"$(PYTHON)" patch_messages.py --source-romfs "$(ROMFS_SOURCE)" --output-romfs "$(RELEASE_ROMFS)"
+host-test:
+	$(CC_FOR_BUILD) -std=c11 -O2 -Wall -Wextra -Werror official_bulk_sync_host_test.c official_bulk_sync_core.c -o "$(BUILD)/official_bulk_sync_host_test"
+	"$(BUILD)/official_bulk_sync_host_test"
 
-verify: $(PATCHED) $(RELEASE_IPS) layeredfs verify_patch.py
-	"$(PYTHON)" verify_patch.py --base "$(BASE)" --patched "$(PATCHED)" --symbols "$(SYMBOLS)" --ips "$(RELEASE_IPS)" --source-romfs "$(ROMFS_SOURCE)" --output-romfs "$(RELEASE_ROMFS)"
+verify: $(PATCHED) $(RELEASE_IPS) verify_official_bulk_sync.py
+	"$(PYTHON)" verify_official_bulk_sync.py --base "$(BASE)" --patched "$(PATCHED)" --symbols "$(SYMBOLS)" --ips "$(RELEASE_IPS)"
 
 clean:
 	rm -rf "$(RELEASE_TITLE)" "$(BUILD)"
