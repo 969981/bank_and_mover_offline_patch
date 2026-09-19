@@ -4,6 +4,8 @@
 
 ## Official Bulk Sync（当前 feature 分支）
 
+- **[Official Bulk Sync V3 使用文档](official-bank-bulk-sync-usage-v3.zh-cn.md)**：安装、`bulk_import.bin`、自动 fresh backup、H0 / H1-preview / 1 Pokémon server round-trip、HOME 隔离验证、回退与常见问题。
+- **[Official Bulk Sync V3 编译与发布指南](official-bank-bulk-sync-build-release-guide-v3.zh-cn.md)**：stock `.code` 基线、devkitARM/armips/flips、host/ARM/IPS verifier、打包、SHA-256、GitHub prerelease 与发布后检查清单。
 - **[Official Bulk Sync V3 原理解析与端到端技术说明](official-bank-bulk-sync-principles-v3.zh-cn.md)**：从原版 state gate、ARM/Thumb dispatcher、fresh BankObject 备份、只读 bulk、slot-aware metadata writer、原版 Save/Upload 到 H0/H1 round-trip 的完整工作原理与维护规则。
 - **[Official Bulk Sync 详细技术文档 V3](official-bank-bulk-sync-technical-v3.zh-cn.md)**：2026-09-19 当前版本；重点记录 V2 `undefined instruction` 的 ARM/Thumb interworking relocation 根因、机器码证据、V3 command-buffer 参数传递、RX text-tail payload、静态边界与实机验证顺序。
 - [Official Bulk Sync 详细技术文档 V2](official-bank-bulk-sync-technical-v2.zh-cn.md)：记录上一阶段 `.data cave` 修复和单 Hook/native-state gate 架构；其中 Thumb→ARM `OfficialBulk_CommandBuffer` bridge 已在 V3 废弃。
@@ -28,6 +30,14 @@
 当前只修改一个原版执行点和真正的 RX text 尾部；不再向 mapped `.data` / BSS 写入代码，也不再生成 Thumb→ARM external helper relocation。
 
 **尚未完成的关键证据是官方服务器 Save → redownload round-trip。** 必须先从 1 Pokémon 开始验证，再扩大到 30 / 300 / 3000。
+
+当前 GitHub prerelease：
+
+```text
+official-bulk-sync-v3-preview-20260919
+```
+
+使用/编译发布时以 V3 文档为准，不要继续使用旧 V1/V2 的安装布局或 code cave 假设。
 
 ## Route A Preview / 离线研究入口
 
