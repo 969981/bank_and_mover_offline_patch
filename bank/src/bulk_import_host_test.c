@@ -23,6 +23,9 @@ int main(void)
     bulk[BANK_V15_BOX_COUNT_OFFSET+1]=0;
 
     failures+=expect(BankBulk_ValidateHeader4(bulk+BANK_V15_VERSION_OFFSET));
+    failures+=expect(BankBulk_IsSupportedInputSize(BANK_V15_SIZE));
+    failures+=expect(BankBulk_IsSupportedInputSize(BANK_G7_PKHEX_VIEW_SIZE));
+    failures+=expect(!BankBulk_IsSupportedInputSize(BANK_G7_PKHEX_VIEW_SIZE-1));
     BankBulk_ApplyMainBoxes(runtime,bulk);
 
     failures+=expect(runtime[0x000000]==0x11);
