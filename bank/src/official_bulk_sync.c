@@ -39,7 +39,6 @@ typedef u8 (*SourceSoftwareGetter)(void *);
 typedef int (*StageFileUpdate)(void *,void *,u32,void *);
 typedef int (*TransactionUpdate)(void *,void *,u32);
 
-static const char emptyPath[1]={0};
 static const char bulkPath[]="/3ds/Bank/bulk_import.bin";
 
 static s32 sync(u32 handle)
@@ -58,8 +57,8 @@ static s32 setSize(u32 handle,u64 size,volatile u32 *c)
 
 static s32 openFile(const char *path,u32 pathSize,u32 flags,u32 *handle)
 {
-    return OPEN_DIRECT(FSUSER_HANDLE,handle,0,ARCHIVE_SDMC,PATH_EMPTY,emptyPath,1,
-        PATH_ASCII,path,pathSize,flags,0);
+    return OPEN_DIRECT(FSUSER_HANDLE,handle,0,ARCHIVE_SDMC,PATH_EMPTY,
+        bulkPath+sizeof(bulkPath)-1u,1,PATH_ASCII,path,pathSize,flags,0);
 }
 
 static int writeSnapshot(const char *path,u32 pathSize,const u8 *body,volatile u32 *commandBuffer)
