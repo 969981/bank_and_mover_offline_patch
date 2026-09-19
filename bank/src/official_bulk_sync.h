@@ -29,6 +29,16 @@ typedef struct {
     unsigned long long timestamp;
 } OfficialBulkMetadata;
 
+enum {
+    OFFICIAL_HOME_COMMIT_NATIVE=0,
+    OFFICIAL_HOME_COMMIT_START_STAGE=1,
+    OFFICIAL_HOME_COMMIT_WAIT=2,
+    OFFICIAL_HOME_COMMIT_START_COMMIT=3,
+    OFFICIAL_HOME_COMMIT_START_ROLLBACK=4,
+    OFFICIAL_HOME_COMMIT_FINISH_SUCCESS=5,
+    OFFICIAL_HOME_COMMIT_FINISH_ERROR=6
+};
+
 OFFICIAL_BULK_API int OfficialBulk_IsSupportedSize(unsigned long long size);
 OFFICIAL_BULK_API int OfficialBulk_ValidateHeader4(const unsigned char header[4]);
 OFFICIAL_BULK_API int OfficialBulk_RecordIsEmpty(const unsigned char record[BANK_V15_PKM_SIZE]);
@@ -43,5 +53,7 @@ OFFICIAL_BULK_API int OfficialBulk_ApplyDataOnly(unsigned char *runtimeBody,cons
 OFFICIAL_BULK_API int OfficialBulk_BuildBackupPath(const unsigned char *runtimeBody,char *out,unsigned outSize);
 OFFICIAL_BULK_API unsigned char OfficialBulk_FormatTagForProfile(unsigned profileId);
 OFFICIAL_BULK_API int OfficialBulk_ShouldProcessState(unsigned substate,unsigned callbackStatus,unsigned specialFlag);
+OFFICIAL_BULK_API int OfficialBulk_HomeCommitAction(unsigned substate,unsigned dirty,
+    unsigned callbackStatus,unsigned specialFlag);
 
 #endif

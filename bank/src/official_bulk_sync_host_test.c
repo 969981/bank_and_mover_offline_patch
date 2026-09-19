@@ -120,6 +120,21 @@ int main(void)
     assert(OfficialBulk_ShouldProcessState(3u,1u,0u)==0);
     assert(OfficialBulk_ShouldProcessState(3u,1u,1u)==0);
 
+    /* HOME state 29 commit gate: native setup first, then Stage -> Commit.
+       Any service-error flag enters rollback, and rollback completion must
+       finish on the stock error terminal rather than entering HOME state 27. */
+    assert(OfficialBulk_HomeCommitAction(0u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_NATIVE);
+    assert(OfficialBulk_HomeCommitAction(1u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_START_STAGE);
+    assert(OfficialBulk_HomeCommitAction(0x80u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_WAIT);
+    assert(OfficialBulk_HomeCommitAction(0x80u,1u,1u,0u)==OFFICIAL_HOME_COMMIT_START_COMMIT);
+    assert(OfficialBulk_HomeCommitAction(0x80u,1u,1u,1u)==OFFICIAL_HOME_COMMIT_START_ROLLBACK);
+    assert(OfficialBulk_HomeCommitAction(0x81u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_WAIT);
+    assert(OfficialBulk_HomeCommitAction(0x81u,1u,1u,0u)==OFFICIAL_HOME_COMMIT_FINISH_SUCCESS);
+    assert(OfficialBulk_HomeCommitAction(0x81u,1u,1u,1u)==OFFICIAL_HOME_COMMIT_START_ROLLBACK);
+    assert(OfficialBulk_HomeCommitAction(0x82u,1u,0u,0u)==OFFICIAL_HOME_COMMIT_WAIT);
+    assert(OfficialBulk_HomeCommitAction(0x82u,1u,1u,0u)==OFFICIAL_HOME_COMMIT_FINISH_ERROR);
+    assert(OfficialBulk_HomeCommitAction(1u,0u,0u,0u)==OFFICIAL_HOME_COMMIT_NATIVE);
+
     free(runtime); free(bulk); free(homeRuntime); free(homeBulk);
     return 0;
 }
