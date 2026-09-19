@@ -59,12 +59,17 @@ static unsigned takeTens(unsigned *value)
     return tens;
 }
 
+#ifdef OFFICIAL_BULK_THUMB_RUNTIME
+extern volatile u32 *OfficialBulk_CommandBuffer(void);
+#define commandBuffer OfficialBulk_CommandBuffer
+#else
 static volatile u32 *commandBuffer(void)
 {
     u32 tls;
     __asm__ volatile("mrc p15, 0, %0, c13, c0, 3" : "=r"(tls));
     return (volatile u32 *)(tls+0x80u);
 }
+#endif
 
 static s32 sync(u32 handle)
 {
@@ -185,6 +190,7 @@ int OfficialBulkSync_Process(void *stateVoid)
     int applyResult,haveMeta;
 
     if (!state) return 0;
+    if (!OfficialBulk_ShouldProcessState(*(u32 *)(state+0x10),state[0x40],state[0x41])) return 0;
     flow=*(u8 **)(state+8);
     object=flow?*(u8 **)(flow+0xCC):0;
     if (!object || *(u32 *)object!=BANK_OBJECT_VTABLE) return 0;
