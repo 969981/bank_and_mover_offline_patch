@@ -15,25 +15,27 @@ COMMON = {
     # Hook the two real game-recovery mismatch edges, not the shared state=8 funnel.
     "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
     "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
+    # Bind OBRX to the exact BankTransactionParam before stock submits RMC52.
+    # At this BL seam r3 is state+0x28 (BankTransactionParam*), and the stock
+    # callee copies that tuple into the remote request before issuing it.
+    "save_stage_tx_bind_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
     # Safe marker cleanup points after stock remote success callbacks.
     "save_complete_callback_success": (0x002B20CC, bytes.fromhex("0d 10 a0 e3")),
     "save_rollback_callback_success": (0x002B210C, bytes.fromhex("10 10 a0 e3")),
 }
 
 AUTO = {
-    # Earliest currently proven point where state+0x28 contains the exact tx and
-    # stock has not yet written GameRecoveryRecord.
-    "save_case3_tx_bound": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
-    "serialize_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
+    # Observation seam only: stock starts copying the already-bound tx into the
+    # GameRecoveryRecord here.  TX_BOUND itself must happen at 0x002B24A0.
+    "save_game_recovery_write_begin": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
 }
 
 SMART = {
-    "save_case3_tx_bound": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
+    "save_game_recovery_write_begin": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
     "save_game_started": (0x002B1F1C, bytes.fromhex("04 00 a0 e3")),
     "save_game_result_dispatch": (0x002B1F48, bytes.fromhex("89 00 00 ea")),
     "save_remote_complete_start": (0x002B20A0, bytes.fromhex("40 00 94 e5")),
     "save_remote_complete_call": (0x002B20AC, bytes.fromhex("30 8f fc eb")),
-    "serialize_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
 
 
