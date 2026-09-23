@@ -56,7 +56,7 @@ jobs:
             -o /tmp/bulk_test
           /tmp/bulk_test
 
-      - name: Verify ARM production payload and A shim
+      - name: Verify ARM production payload and pre-stage journal shims
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi
@@ -70,19 +70,47 @@ jobs:
           .cpu mpcore
           .arm
           .text
-          .global recovery_a_shim
-          recovery_a_shim:
-              ldr r0,[r4,#0x28]
-              add r1,r4,#0x40
-              ldmia r0!,{r2,r3,r5-r7,r12}
-              stmia r1!,{r2,r3,r5-r7,r12}
-              ldmia r0!,{r2,r3}
-              stmia r1!,{r2,r3}
-              mov r0,#6
-              b recovery_a_shim
+          .global recovery_a_pre_stage
+          recovery_a_pre_stage:
+              ldrb r1,[r4,#0x48]
+              cmp r1,#8
+              beq 1f
+              mov r1,#7
+              strb r1,[r4,#0x48]
+              mov r0,#7
+              b .
+          1:
+              mov r1,#0
+              strb r1,[r4,#0x48]
+              mov r0,r4
+              bl 2f
+          2:
+              b .
+          .global recovery_a_after_journal
+          recovery_a_after_journal:
+              ldrb r1,[r4,#0x48]
+              cmp r1,#7
+              bne 3f
+              cmp r0,#1
+              bne 4f
+              mov r1,#8
+              strb r1,[r4,#0x48]
+              mov r0,#1
+              b .
+          4:
+              mov r1,#0
+              strb r1,[r4,#0x48]
+              mov r0,#20
+              b .
+          3:
+              cmp r0,#1
+              b .
           EOF
           arm-none-eabi-as -mcpu=mpcore /tmp/recovery-a.s -o /tmp/recovery-a.o
           arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-a.o /tmp/recovery-a.bin
-          echo '=== recovery A shim ==='
+          echo '=== Recovery A pre-stage journal shims ==='
           arm-none-eabi-objdump -d /tmp/recovery-a.o
-          test "$(stat -c %s /tmp/recovery-a.bin)" -eq 32
+          test "$(stat -c %s /tmp/recovery-a.bin)" -eq 108
+          # RX tail is 0x6F0 = 1776 bytes. Existing V3 object is 1577 bytes;
+          # dispatch + these shims must stay inside the remaining budget.
+          test $((1577 + 36 + 108)) -le 1776
