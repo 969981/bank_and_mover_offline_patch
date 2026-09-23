@@ -36,6 +36,30 @@ typedef u8 (*SourceSoftwareGetter)(void *);
 static const char emptyPath[1]={0};
 static const char bulkPath[]="/3ds/Bank/bulk_import.bin";
 
+static unsigned mod60u32(u32 value)
+{
+    unsigned remainder=0,bit;
+    for (bit=0;bit<32u;bit++) {
+        remainder=(remainder<<1)|((value>>31)&1u);
+        value<<=1;
+        if (remainder>=60u) remainder-=60u;
+    }
+    return remainder;
+}
+
+static unsigned takeTens(unsigned *value)
+{
+    unsigned v=*value,tens;
+    if (v>=50u) { tens=5u; v-=50u; }
+    else if (v>=40u) { tens=4u; v-=40u; }
+    else if (v>=30u) { tens=3u; v-=30u; }
+    else if (v>=20u) { tens=2u; v-=20u; }
+    else if (v>=10u) { tens=1u; v-=10u; }
+    else tens=0u;
+    *value=v;
+    return tens;
+}
+
 static s32 sync(u32 handle)
 {
     register u32 r0 __asm__("r0")=handle;
@@ -150,7 +174,7 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
     u8 *state=(u8 *)stateVoid,*flow,*object,*body;
     OfficialBulkMetadata meta={0u,0u,0u};
     char backupPath[48];
-    unsigned substate;
+    unsigned substate,sec=0;
     int applyResult,haveMeta;
 
     if (!state || !commandBuffer) return 0;
@@ -164,6 +188,13 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
     if (!OfficialBulk_ValidateHeader4(body+BANK_V15_VERSION_OFFSET)) return 0;
     haveMeta=queryMetadata(&meta);
     if (!OfficialBulk_BuildBackupPath(body,backupPath,sizeof(backupPath))) return 0;
+    if (haveMeta) {
+        unsigned tens;
+        sec=mod60u32((u32)meta.timestamp);
+        tens=takeTens(&sec);
+        backupPath[32]=(char)('0'+tens);
+        backupPath[33]=(char)('0'+sec);
+    }
     if (!writeSnapshot(backupPath,39u,body,commandBuffer)) return 0;
     if (!haveMeta) return 0;
 
