@@ -1,0 +1,81 @@
+name: official-bank-recovery-research-ci
+
+on:
+  push:
+    branches:
+      - feature/official-bank-recovery-research
+    paths:
+      - bank/tools/extract_recovery_chain.py
+      - bank/tools/test_extract_recovery_chain.py
+      - bank/tools/recovery_targets.txt
+      - bank/docs/code.bin_all_functions.c
+      - bank/src/official_bulk_sync.c
+      - bank/src/official_bulk_sync_core.c
+      - bank/src/official_bulk_sync.h
+      - bank/src/official_bulk_sync_prod.c
+      - bank/src/official_bulk_sync_host_test.c
+      - bank/src/main_official.s
+      - bank/src/Makefile
+      - .github/workflows/official-bank-recovery-research-ci.yml
+  workflow_dispatch:
+
+jobs:
+  analyze-and-regress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test Ghidra recovery extractor
+        run: python bank/tools/test_extract_recovery_chain.py
+
+      - name: Extract recovery-state functions
+        run: |
+          python bank/tools/extract_recovery_chain.py \
+            --input bank/docs/code.bin_all_functions.c \
+            --targets-file bank/tools/recovery_targets.txt \
+            --output /tmp/official-bank-recovery-chain.txt \
+            --require-all
+          echo '=== recovery-chain report summary ==='
+          sed -n '1,260p' /tmp/official-bank-recovery-chain.txt
+          echo '=== target count ==='
+          grep -c '^===== TARGET ' /tmp/official-bank-recovery-chain.txt | grep '^7$'
+
+      - name: Upload recovery-chain report
+        uses: actions/upload-artifact@v4
+        with:
+          name: official-bank-recovery-chain
+          path: /tmp/official-bank-recovery-chain.txt
+          if-no-files-found: error
+
+      - name: Install ARM compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
+
+      - name: Run existing bulk-sync host regression test
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_bulk_sync_host_test.c \
+            bank/src/official_bulk_sync_core.c \
+            -o /tmp/official_bulk_sync_host_test
+          /tmp/official_bulk_sync_host_test
+
+      - name: Compile existing ARMv6K Thumb production object
+        run: |
+          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/official_bulk_sync_prod.o
+          arm-none-eabi-size /tmp/official_bulk_sync_prod.o
+
+      - name: Preserve V3 helper and payload constraints
+        run: |
+          if arm-none-eabi-nm -u /tmp/official_bulk_sync_prod.o | grep -E '__aeabi_(u|i)div|__aeabi_(u|i)divmod|OfficialBulk_CommandBuffer'; then
+            echo 'unexpected runtime/interworking dependency' >&2
+            exit 1
+          fi
+          if arm-none-eabi-readelf -r /tmp/official_bulk_sync_prod.o | grep -q 'OfficialBulk_CommandBuffer'; then
+            echo 'forbidden Thumb-to-ARM R_ARM_THM_CALL relocation' >&2
+            exit 1
+          fi
+          text=$(arm-none-eabi-size /tmp/official_bulk_sync_prod.o | awk 'NR==2 {print $1}')
+          echo "Thumb object text bytes: $text"
+          test "$text" -le 1680
