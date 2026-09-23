@@ -7,6 +7,8 @@ on:
     paths:
       - bank/tools/extract_recovery_chain.py
       - bank/tools/test_extract_recovery_chain.py
+      - bank/tools/extract_recovery_functions.py
+      - bank/tools/test_extract_recovery_functions.py
       - bank/tools/disassemble_recovery_gate.py
       - bank/tools/recovery_targets.txt
       - bank/docs/code.bin_all_functions.c
@@ -32,7 +34,11 @@ jobs:
       - name: Test recovery analysis tools
         run: |
           python bank/tools/test_extract_recovery_chain.py
-          python -m py_compile bank/tools/extract_recovery_chain.py bank/tools/disassemble_recovery_gate.py
+          python -m unittest bank/tools/test_extract_recovery_functions.py -v
+          python -m py_compile \
+            bank/tools/extract_recovery_chain.py \
+            bank/tools/extract_recovery_functions.py \
+            bank/tools/disassemble_recovery_gate.py
           set +e
           python bank/tools/disassemble_recovery_gate.py --code /tmp/definitely-missing.code >/tmp/missing.out 2>/tmp/missing.err
           rc=$?
@@ -55,11 +61,25 @@ jobs:
           echo "expected=$expected actual=$actual"
           test "$actual" -eq "$expected"
 
-      - name: Upload recovery-chain report
+      - name: Enumerate state23 neighborhood functions
+        run: |
+          python bank/tools/extract_recovery_functions.py \
+            bank/docs/code.bin_all_functions.c \
+            --range-start 0x002AD600 \
+            --range-end 0x002AD900 \
+            --output /tmp/official-bank-state23-neighborhood.txt
+          grep -q '^functions=' /tmp/official-bank-state23-neighborhood.txt
+          grep -q '0x002AD724' /tmp/official-bank-state23-neighborhood.txt
+          echo '=== state23 neighborhood ==='
+          sed -n '1,420p' /tmp/official-bank-state23-neighborhood.txt
+
+      - name: Upload recovery static reports
         uses: actions/upload-artifact@v4
         with:
-          name: official-bank-recovery-chain
-          path: /tmp/official-bank-recovery-chain.txt
+          name: official-bank-recovery-static-reports
+          path: |
+            /tmp/official-bank-recovery-chain.txt
+            /tmp/official-bank-state23-neighborhood.txt
           if-no-files-found: error
 
       - name: Run stock recovery decision model tests
