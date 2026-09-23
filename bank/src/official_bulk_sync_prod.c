@@ -3,3 +3,4 @@
 #define OFFICIAL_BULK_THUMB_RUNTIME 1
 #include "official_bulk_sync_core.c"
 #include "official_bulk_sync.c"
+#include "official_recovery_smart_prod.c"
