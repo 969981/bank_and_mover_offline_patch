@@ -66,6 +66,17 @@ class ExtractRecoveryFunctionsTests(unittest.TestCase):
         self.assertEqual(erf.resolve_function_address(index, "002af038"), "002af034")
         self.assertEqual(erf.resolve_function_address(index, "FUN_002af034"), "002af034")
 
+    def test_list_functions_in_range_returns_only_entries_inside_half_open_range(self) -> None:
+        index = erf.index_functions(SAMPLE)
+        self.assertEqual(
+            erf.list_functions_in_range(index, "002a0000", "002b0000"),
+            ["002a0000", "002af034"],
+        )
+        self.assertEqual(
+            erf.list_functions_in_range(index, "002af035", "002b0001"),
+            ["002b0000"],
+        )
+
     def test_build_report_discloses_requested_and_resolved_addresses(self) -> None:
         report, missing = erf.build_report(SAMPLE, ["002af038"], ["FUN_001d5c28"], 1)
         self.assertEqual(missing, [])
