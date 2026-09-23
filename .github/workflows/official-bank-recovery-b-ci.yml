@@ -80,8 +80,8 @@ jobs:
           arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-wal-b.o /tmp/recovery-wal-b.bin
           echo '=== Recovery B WAL Thumb ==='
           arm-none-eabi-objdump -d /tmp/recovery-wal-b.o
-          test "$(stat -c %s /tmp/recovery-wal-b.bin)" -eq 156
+          test "$(stat -c %s /tmp/recovery-wal-b.bin)" -eq 160
 
-          # RX tail = 0x6F0 = 1776 bytes. Existing ARM dispatcher is 36 bytes.
-          # 1577 + 36 + 156 = 1769, leaving only 7 bytes: keep this hard-gated.
-          test $((1577 + 36 + 156)) -le 1776
+          # RX tail = 0x6F0 = 1776 bytes.
+          # 1577 bulk payload + 36 ARM dispatcher + 160 smart WAL = 1773.
+          test $((1577 + 36 + 160)) -le 1776
