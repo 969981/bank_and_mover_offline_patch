@@ -12,6 +12,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Direct CIA extraction helpers
+        run: |
+          cd bank/tools
+          python test_extract_bank_cia.py -v
+
+      - name: Recovery hook-site verifier
+        run: |
+          cd bank/tools
+          python test_verify_recovery_hook_sites.py -v
+
       - name: Staged recovery marker contract
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
