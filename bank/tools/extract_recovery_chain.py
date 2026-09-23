@@ -61,18 +61,40 @@ def direct_callees(function: GhidraFunction) -> List[str]:
     return ordered
 
 
+def resolve_target(functions: Dict[str, GhidraFunction], raw: str) -> GhidraFunction | None:
+    address = normalize_address(raw)
+    exact = functions.get(address)
+    if exact is not None:
+        return exact
+    value = int(address, 16)
+    ordered = sorted((int(key, 16), fn) for key, fn in functions.items())
+    for index, (start, fn) in enumerate(ordered[:-1]):
+        next_start = ordered[index + 1][0]
+        if start < value < next_start:
+            return fn
+    # The final exported function has no following header to bound it.  Permit
+    # a conservative interior-address lookup so an end-of-text hook can still
+    # be resolved, while refusing unrelated far-away addresses.
+    if ordered and ordered[-1][0] < value <= ordered[-1][0] + 0x10000:
+        return ordered[-1][1]
+    return None
+
+
 def render_report(functions: Dict[str, GhidraFunction], targets: Iterable[str]) -> Tuple[str, List[str]]:
     chunks: List[str] = []
     missing: List[str] = []
     for raw in targets:
         address = normalize_address(raw)
-        function = functions.get(address)
+        function = resolve_target(functions, address)
         if function is None:
             missing.append(address)
             chunks.append(f'===== MISSING {address} =====\n')
             continue
         callees = direct_callees(function)
-        chunks.append(f'===== TARGET {address} {function.name} =====\n')
+        if function.address == address:
+            chunks.append(f'===== TARGET {address} {function.name} =====\n')
+        else:
+            chunks.append(f'===== TARGET {address} RESOLVED {function.address} {function.name} =====\n')
         chunks.append('DIRECT CALLEES: ' + (', '.join(callees) if callees else '(none)') + '\n\n')
         chunks.append(function.text)
         chunks.append('\n')
