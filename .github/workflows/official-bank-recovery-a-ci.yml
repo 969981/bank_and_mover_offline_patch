@@ -64,14 +64,15 @@ jobs:
           arm-none-eabi-gcc $BASEFLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/prod-default.o
           echo '=== production Thumb object ==='
           arm-none-eabi-size /tmp/prod-default.o
-          test "$(arm-none-eabi-size /tmp/prod-default.o | awk 'NR==2 {print $1}')" -eq 1605
+          PROD_SIZE=$(arm-none-eabi-size /tmp/prod-default.o | awk 'NR==2 {print $1}')
 
           arm-none-eabi-as -mcpu=mpcore bank/src/official_recovery_wal_thumb.s -o /tmp/recovery-wal-a.o
           arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-wal-a.o /tmp/recovery-wal-a.bin
           echo '=== Recovery A WAL Thumb ==='
           arm-none-eabi-objdump -d /tmp/recovery-wal-a.o
-          test "$(stat -c %s /tmp/recovery-wal-a.bin)" -eq 134
+          WAL_SIZE=$(stat -c %s /tmp/recovery-wal-a.bin)
 
-          # RX tail = 0x6F0 = 1776 bytes. Existing ARM dispatcher is 36 bytes.
-          # 1605 + 36 + 134 = 1775, leaving 1 byte before TextMappedEnd.
-          test $((1605 + 36 + 134)) -le 1776
+          # RX tail is exactly 0x6F0=1776 bytes. The ARM dispatcher is 36 bytes.
+          TOTAL=$((PROD_SIZE + 36 + WAL_SIZE))
+          echo "RX tail budget: bulk=${PROD_SIZE} dispatcher=36 wal=${WAL_SIZE} total=${TOTAL}/1776"
+          test "$TOTAL" -le 1776
