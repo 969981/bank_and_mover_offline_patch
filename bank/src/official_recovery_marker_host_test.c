@@ -20,6 +20,7 @@ int main(void)
     unsigned char marker[OFFICIAL_RECOVERY_MARKER_SIZE];
     unsigned char corrupt[OFFICIAL_RECOVERY_MARKER_SIZE];
     OfficialRecoveryRecord server=tx(),decoded;
+    OfficialRecoveryStage stage;
     unsigned profile=0,flags=0;
 
     assert(OfficialRecoveryMarker_Encode(marker,&server,7u,
@@ -27,12 +28,13 @@ int main(void)
     assert(OfficialRecoveryMarker_Decode(marker,&decoded,&profile,&flags)==1);
     assert(profile==7u);
     assert(flags==OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED);
+    assert(OfficialRecoveryMarker_GetStage(marker,&stage)==1);
+    assert(stage==OFFICIAL_RECOVERY_STAGE_TX_BOUND);
     assert(decoded.dataId==server.dataId);
     assert(decoded.transactionPassword==server.transactionPassword);
     assert(decoded.curVersion==server.curVersion);
     assert(decoded.updateVersion==server.updateVersion);
     assert(decoded.size==server.size);
-
     assert(OfficialRecoveryMarker_MatchesServer(marker,&server,7u)==1);
 
     server.curVersion++;
@@ -58,17 +60,37 @@ int main(void)
     assert(OfficialRecoveryMarker_Encode(marker,&server,9u,
         OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED)==0);
 
-    /* A bulk session starts before PrepareUpdate has produced a transaction. */
     assert(OfficialRecoveryMarker_EncodePending(marker,7u)==1);
     assert(OfficialRecoveryMarker_IsPending(marker,7u)==1);
-    assert(OfficialRecoveryMarker_IsPending(marker,6u)==0);
+    assert(OfficialRecoveryMarker_GetStage(marker,&stage)==1);
+    assert(stage==OFFICIAL_RECOVERY_STAGE_BULK_APPLIED);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_TX_BOUND)==0);
     assert(OfficialRecoveryMarker_MatchesServer(marker,&server,7u)==0);
 
-    /* Once stock PrepareUpdate returns, bind the marker to that exact tx. */
     assert(OfficialRecoveryMarker_BindTransaction(marker,&server,6u)==0);
     assert(OfficialRecoveryMarker_BindTransaction(marker,&server,7u)==1);
-    assert(OfficialRecoveryMarker_IsPending(marker,7u)==0);
+    assert(OfficialRecoveryMarker_GetStage(marker,&stage)==1);
+    assert(stage==OFFICIAL_RECOVERY_STAGE_TX_BOUND);
     assert(OfficialRecoveryMarker_MatchesServer(marker,&server,7u)==1);
+
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_GAME_SAVE_STARTED)==1);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_GAME_SAVE_STARTED)==1);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_GAME_SAVE_OK)==1);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_TX_BOUND)==0);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_DONE)==0);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_REMOTE_COMPLETE_STARTED)==1);
+    assert(OfficialRecoveryMarker_AdvanceStage(marker,OFFICIAL_RECOVERY_STAGE_DONE)==1);
+
+    memcpy(corrupt,marker,sizeof(marker));
+    corrupt[9]=99u;
+    OfficialRecoveryMarker_Rechecksum(corrupt);
+    assert(OfficialRecoveryMarker_Decode(corrupt,&decoded,&profile,&flags)==0);
+
+    memcpy(corrupt,marker,sizeof(marker));
+    corrupt[4]=1u;
+    corrupt[5]=0u;
+    OfficialRecoveryMarker_Rechecksum(corrupt);
+    assert(OfficialRecoveryMarker_Decode(corrupt,&decoded,&profile,&flags)==0);
 
     memcpy(corrupt,marker,sizeof(marker));
     corrupt[0]^=1u;
