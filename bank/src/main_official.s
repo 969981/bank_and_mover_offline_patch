@@ -11,9 +11,7 @@
 .definelabel OfficialBulk_CodeEnd,   TextMappedEnd
 
 .definelabel RecoveryA_SaveCase1,               0x002B1DE4
-.definelabel RecoveryA_SaveCase7Status,         0x002B1FFC
 .definelabel RecoveryA_SaveCase8Result,         0x002B2090
-.definelabel RecoveryA_LocalStatusCmp2,          0x002A8974
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
 
@@ -22,29 +20,25 @@
     b OfficialBulk_BankDataSyncDispatch
 
 // -----------------------------------------------------------------------------
-// Recovery A: bulk-only durable pre-RMC52 WAL
+// Recovery A: bulk-only durable pre-RMC52 stock-status1 WAL
 // -----------------------------------------------------------------------------
-// Replaces stock `mov r0,r4`. The helper returns r0=r4 for ordinary saves and
-// for the second journal pass, so the untouched BL at 0x002B1DE8 starts the
-// native SerializeAndStage call exactly once.
+// Replaces stock `mov r0,r4`. For an ordinary save the helper simply restores
+// r0=r4. For a Bulk session it first routes through stock case7, which persists
+// the exact BankTransactionParam with native status=1 before any RMC52 request.
+// On the second pass the helper disarms the transient Bulk flag and returns
+// r0=r4, so the untouched BL at 0x002B1DE8 starts SerializeAndStage once.
 .org RecoveryA_SaveCase1
     blx OfficialRecovery_WalCase1
 
-// Stock case7 writes status=1. Only the private pre-Stage journal pass selects
-// status=3; ordinary game-save rollback records stay native status=1.
-.org RecoveryA_SaveCase7Status
-    blx OfficialRecovery_WalSelectStatus
-
-// During the private journal pass the helper routes success back to case1 and
-// failure to state20. Ordinary case8 returns with stock CMP flags intact.
+// During the private pre-Stage journal pass the helper routes local-save
+// success back to case1 and failure to state20. Ordinary case8 returns with the
+// original CMP flags expected by stock MOVEQ/BEQ at 0x002B2094/0x002B2098.
 .org RecoveryA_SaveCase8Result
     blx OfficialRecovery_WalCase8Result
 
-// Stock already handled local status=1 before this instruction. Replace only
-// the status=2 CMP: private status=3 performs the full ownership check and, if
-// exact, selects stock Rollback state6. Ordinary status=2 returns with EQ set.
-.org RecoveryA_LocalStatusCmp2
-    blx OfficialRecovery_WalLocalStatusA
+// No state18 hook is needed in Variant A. The durable record is native
+// status=1, so stock state18 already performs exact dataId/curVersion matching
+// and selects the native Rollback path.
 
 // -----------------------------------------------------------------------------
 // RX-tail payload
