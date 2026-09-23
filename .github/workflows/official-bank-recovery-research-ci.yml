@@ -5,6 +5,8 @@ on:
     branches:
       - feature/official-bank-recovery-research
     paths:
+      - bank/tools/extract_bank_cia.py
+      - bank/tools/test_extract_bank_cia.py
       - bank/tools/extract_recovery_chain.py
       - bank/tools/test_extract_recovery_chain.py
       - bank/tools/extract_recovery_functions.py
@@ -36,9 +38,11 @@ jobs:
 
       - name: Test recovery analysis tools
         run: |
+          python bank/tools/test_extract_bank_cia.py
           python bank/tools/test_extract_recovery_chain.py
           python -m unittest bank/tools/test_extract_recovery_functions.py -v
           python -m py_compile \
+            bank/tools/extract_bank_cia.py \
             bank/tools/extract_recovery_chain.py \
             bank/tools/extract_recovery_functions.py \
             bank/tools/disassemble_recovery_gate.py
