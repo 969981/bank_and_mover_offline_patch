@@ -102,6 +102,19 @@
 .definelabel BankSaveState_Update,              0x002B1CF8
 .definelabel BankSave_SerializeAndStage,        0x002B2320
 .definelabel BankSaveState_Initialize,           0x002B2520
+; Recovery state 18 exact machine-code landmarks for the verified v1.5 image.
+; 恢复状态 18 的精确机器码落点（仅适用于已校验的 v1.5 镜像）。
+.definelabel BankRecoveryState_Update,          0x002A8760
+.definelabel BankRecovery_InvalidStatusFunnel,  0x002A8A74
+.definelabel BankRecovery_MismatchFunnel,       0x002A8AD0
+.definelabel BankRecovery_ErrorCase8,           0x002A8B4C
+.definelabel BankRecovery_SetSubstate,          0x002A8980
+.definelabel BankRecovery_CompleteCase5,        0x002A8AD8
+.definelabel BankRecovery_RollbackCase6,        0x002A8AFC
+; Save state 7 case entries used by the smart-recovery research branch.
+.definelabel BankSave_Case3,                    0x002B1E18
+.definelabel BankSave_Case5,                    0x002B1F4C
+.definelabel BankSave_Case9,                    0x002B20A0
 ; The title update makes both title UI layers visible and reports title exit
 ; through the byte at state+0x3C.
 ; 标题更新会显示两层标题 UI，并通过 state+0x3C 的字节报告标题退出。
