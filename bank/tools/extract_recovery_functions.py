@@ -2,14 +2,19 @@
 # -*- coding: utf-8 -*-
 """Extract selected functions/references from the large Pokémon Bank Ghidra export.
 
-The repository keeps a >11 MiB `code.bin_all_functions.c`.  GitHub's normal
+The repository keeps a >11 MiB `code.bin_all_functions.c`. GitHub's normal
 contents API is inconvenient for inspecting individual functions in a file of
-that size, so this tool turns a list of stock addresses into a compact,
-deterministic research report.
+that size, so this tool turns stock addresses into a compact, deterministic
+research report.
+
+Curated Bank symbols sometimes name an instruction inside a Ghidra function
+rather than the function's first instruction. The report therefore always
+prints both the requested address and the resolved decompiler function start.
 """
 from __future__ import annotations
 
 import argparse
+import bisect
 import re
 import sys
 from pathlib import Path
@@ -64,6 +69,27 @@ def index_functions(text: str) -> dict[str, tuple[int, int]]:
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
         result[marker_address] = (start, end)
     return result
+
+
+def resolve_function_address(
+    functions: dict[str, tuple[int, int]], requested: str
+) -> str:
+    """Resolve an instruction/symbol address to its preceding Ghidra function.
+
+    The Ghidra export is ordered by function entry address. If the requested
+    address is not itself a marker, the nearest preceding function marker is
+    the only containing-function candidate until the next marker. The caller
+    must keep the requested/resolved distinction visible in its report.
+    """
+    normalized = normalize_address(requested)
+    if normalized in functions:
+        return normalized
+    target = int(normalized, 16)
+    ordered = sorted(int(address, 16) for address in functions)
+    position = bisect.bisect_right(ordered, target) - 1
+    if position < 0:
+        raise KeyError(normalized)
+    return f"{ordered[position]:08x}"
 
 
 def extract_function(text: str, address: str) -> str:
@@ -127,12 +153,19 @@ def build_report(
 
     for requested in addresses:
         normalized = normalize_address(requested)
-        out.extend(["", f"### 0x{normalized.upper()}"])
-        if normalized not in function_index:
-            out.append("<missing>")
+        try:
+            resolved = resolve_function_address(function_index, normalized)
+        except KeyError:
+            out.extend(["", f"### requested=0x{normalized.upper()}", "<missing>"])
             missing.append(normalized)
             continue
-        start, end = function_index[normalized]
+        out.extend(
+            [
+                "",
+                f"### requested=0x{normalized.upper()} resolved_start=0x{resolved.upper()}",
+            ]
+        )
+        start, end = function_index[resolved]
         body = text[start:end].rstrip()
         out.extend(["```c", body, "```"])
 
@@ -149,7 +182,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--address",
         action="append",
         dest="addresses",
-        help="function address; repeatable (default: recovery state set)",
+        help="instruction/function address; repeatable (default: recovery state set)",
     )
     parser.add_argument(
         "--reference",
@@ -181,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if missing:
         print(
-            "error: missing requested function address(es): " + ", ".join(missing),
+            "error: missing requested address(es): " + ", ".join(missing),
             file=sys.stderr,
         )
         return 3
