@@ -11,12 +11,30 @@ EXPECTED_SIZE = 0x2AC000
 EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
-    "save_case3_tx_bind": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
-    "state18_mismatch_funnel": (0x002A8AD0, bytes.fromhex("08 00 a0 e3")),
+    "state18_game_mismatch_funnel": (0x002A8AD0, bytes.fromhex("08 00 a0 e3")),
+}
+AUTO = {
+    "state18_invalid_status_funnel": (0x002A8A74, bytes.fromhex("08 00 a0 e3")),
+    "state18_error_case8_head": (
+        0x002A8B4C,
+        bytes.fromhex(
+            "04 00 94 e5 67 32 fe eb 00 10 a0 e3 00 f0 20 e3 "
+            "30 32 fe eb 00 50 a0 e1 00 20 a0 e3 01 1c a0 e3"
+        ),
+    ),
 }
 SMART = {
-    "save_case5_game_save_ok": (0x002B1F4C, bytes.fromhex("08 00 94 e5")),
-    "save_case9_complete_start": (0x002B20A0, bytes.fromhex("40 00 94 e5")),
+    "save_case2_success_head": (0x002B1E08, bytes.fromhex("03 10 a0 e3 48 00 c4 e5")),
+    "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
+    "state18_local_dataid_mismatch": (0x002A8904, bytes.fromhex("1c 00 00 1a")),
+    "state18_local_version_mismatch": (0x002A891C, bytes.fromhex("16 00 00 1a")),
+    "state18_local_status_block": (
+        0x002A8968,
+        bytes.fromhex(
+            "01 00 50 e3 88 70 c4 e5 52 00 00 0a 02 00 50 e3 "
+            "52 00 00 0a 04 00 a0 e3 10 00 84 e5 d3 00 00 ea"
+        ),
+    ),
 }
 
 
@@ -24,8 +42,7 @@ def sites_for(variant: str):
     if variant not in {"A", "B"}:
         raise ValueError("variant must be A or B")
     sites = dict(COMMON)
-    if variant == "B":
-        sites.update(SMART)
+    sites.update(AUTO if variant == "A" else SMART)
     return sites
 
 
