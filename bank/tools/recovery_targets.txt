@@ -4,5 +4,27 @@
 002A93F4  # state 17: other-side recovery / retry
 002A8760  # state 18: current-user recovery / retry
 002A9118  # state 22: save failure handling
-002AD7BC  # state 23: forced rollback / recovery
+002AD7BC  # state 23 interior address; extractor resolves containing function
 002B1CF8  # state 7: save transaction
+
+# state 18 init/callback neighborhood
+002A86FC
+002A8D30
+
+# Local persistent transaction-record accessors used by save/recovery
+001D4D84
+001D4D78
+001D4D6C
+001D4D60
+001D4D54
+001D4D48
+002CB908
+002CB8D0
+002CB8DC
+002CB8C4
+002CB8E8
+002CB8A8
+
+# Trainer-mismatch message/formatting candidates
+001DFD90
+002B67D8
