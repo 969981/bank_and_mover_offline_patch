@@ -57,5 +57,21 @@ int main(void)
         OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED)==0);
     assert(OfficialRecoveryMarker_Encode(marker,&server,9u,
         OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED)==0);
+
+    /* A bulk session starts before PrepareUpdate has produced a transaction. */
+    assert(OfficialRecoveryMarker_EncodePending(marker,7u)==1);
+    assert(OfficialRecoveryMarker_IsPending(marker,7u)==1);
+    assert(OfficialRecoveryMarker_IsPending(marker,6u)==0);
+    assert(OfficialRecoveryMarker_MatchesServer(marker,&server,7u)==0);
+
+    /* Once stock PrepareUpdate returns, bind the marker to that exact tx. */
+    assert(OfficialRecoveryMarker_BindTransaction(marker,&server,6u)==0);
+    assert(OfficialRecoveryMarker_BindTransaction(marker,&server,7u)==1);
+    assert(OfficialRecoveryMarker_IsPending(marker,7u)==0);
+    assert(OfficialRecoveryMarker_MatchesServer(marker,&server,7u)==1);
+
+    memcpy(corrupt,marker,sizeof(marker));
+    corrupt[0]^=1u;
+    assert(OfficialRecoveryMarker_BindTransaction(corrupt,&server,7u)==0);
     return 0;
 }
