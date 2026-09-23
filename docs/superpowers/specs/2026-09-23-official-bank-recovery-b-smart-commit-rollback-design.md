@@ -11,6 +11,7 @@ Build an experimental self-healing recovery path for Pokémon Bank v1.5 that pre
 - Original functional baseline: `feature/official-bank-bulk-sync`
 - Bank title: `00040000000C9B00`, internal v1.5
 - Verified stock `.code` SHA-256: `2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF`
+- The supplied CIA is a NoCrypto NCCH; its ExeFS `.code` can be extracted and BLZ-decompressed directly to the verified stock image.
 
 ## Confirmed Stock Behavior
 
@@ -29,27 +30,102 @@ Game recovery record:
 
 The recovery UI's Trainer information is display metadata and is not the core blocking predicate.
 
-## Variant B Principle
+## Important machine-code correction
 
-Do not infer Commit merely because a transaction is tool-owned. Commit is allowed only when the tool has positive evidence that the stock game-save phase completed successfully for the exact server transaction. Otherwise use Rollback.
+Verified stock state7 behavior is now known exactly:
 
 ```text
-owned exact transaction
-        ↓
-stock recovery records mismatch
-        ↓
-marker stage evidence
-        ├─ GAME_SAVE_OK or stronger -> COMMIT
-        └─ otherwise                -> ROLLBACK
+case3 @ 0x002B1E18
+    write exact current transaction to GameRecoveryRecord
+    status = 2
+    start game main save
+
+0x002B1F1C
+    enter case4 / wait game save
+
+case4
+0x002B1F3C CMP r0,#1
+0x002B1F40 MOVEQ r0,#5
+0x002B1F44 MOVNE r0,#7
+
+case5 @ 0x002B1F4C
+    reached only after game-save success
+    write exact transaction/status=2 to Bank-local recovery record
+
+case9 @ 0x002B20A0
+    start CompleteUpdate
 ```
 
-This keeps the failure default conservative while allowing the common "game save succeeded, final Complete request lost" window to preserve the staged Bank update.
+This has two design consequences.
+
+### 1. TX_BOUND at state7 case3 is too late
+
+A server pending transaction can already exist after `PrepareUpdateBankObject` while HPP/HTTP upload still has not completed. If the network fails there, state7 never reaches case3, so neither game nor Bank-local recovery record contains the new transaction.
+
+Therefore `TX_BOUND` must be captured:
+
+```text
+PrepareUpdate response returns exact server BankTransactionParam
+        ↓
+TX_BOUND marker persisted
+        ↓
+HPP/upload continues
+```
+
+not:
+
+```text
+HPP/upload finished
+        ↓
+state7 case3
+        ↓
+TX_BOUND               ❌ too late
+```
+
+### 2. GAME_SAVE_OK + stock mismatch is not the normal primary failure case
+
+Once case3 writes the exact transaction/status=2 and the game save is positively confirmed, the next startup should already have a valid game recovery record that state18 can match and use to retry stock Commit.
+
+Therefore the previously assumed common window:
+
+```text
+game save success
+final Complete network failure
+next startup Trainer mismatch
+```
+
+is **not** the best explanation under stock semantics. A plain final-Complete failure should normally be recoverable by stock from the persisted game record.
+
+The higher-confidence mismatch window is earlier:
+
+```text
+PrepareUpdate creates pending T1
+        ↓
+HPP/upload/network fails before case3
+        ↓
+no game/local recovery T1
+        ↓
+state18 mismatch
+```
+
+Variant B is still kept as requested, but its auto-Commit branch is now explicitly an **experimental fault-injection path**, not the default explanation for real-world Trainer mismatch.
+
+## Variant B Principle
+
+Do not infer Commit merely because a transaction is tool-owned. Commit is allowed only when the tool has positive stage evidence and hardware fault injection confirms that a `GAME_SAVE_OK+` marker can coexist with stock local/game mismatch for the exact same server transaction.
+
+Until that combination is proven on hardware, the production-safe interpretation is:
+
+```text
+owned exact mismatch
+    -> Rollback
+```
+
+while the smart action selector remains available for controlled experiments.
 
 ## Marker State Machine
 
-Extend the OBRX marker with a monotonic stage field/flags. Exact binary encoding may remain within the existing fixed marker size if layout permits; version must be incremented when the persisted format changes.
-
-Required semantic stages:
+The OBRX v2 marker uses monotonic stages:
 
 ```text
 NONE
@@ -61,15 +137,13 @@ REMOTE_COMPLETE_STARTED
 DONE
 ```
 
-Only `TX_BOUND`, `GAME_SAVE_STARTED`, `GAME_SAVE_OK`, and `REMOTE_COMPLETE_STARTED` are required for recovery decisions. `DONE` is transient/diagnostic; a successfully completed session should delete/invalidate the marker.
-
 ### BULK_APPLIED
 
 Created after state16 successfully overlays `bulk_import.bin`. Contains profile but no valid transaction identity yet.
 
 ### TX_BOUND
 
-Written once stock Prepare/Stage has returned a complete transaction context:
+Must be written at the earliest confirmed `PrepareUpdateBankObject` response point, before HPP upload completion, and binds:
 
 ```text
 dataId
@@ -82,15 +156,33 @@ profile
 
 ### GAME_SAVE_STARTED
 
-Set immediately before the stock path begins persisting the game recovery record/main for this transaction. This stage is not sufficient for Commit.
+Verified semantic point:
+
+```text
+0x002B1F1C  MOV r0,#4
+```
+
+At this point case3 has already written the exact transaction/status=2 into the game recovery object and has invoked the stock game save path.
 
 ### GAME_SAVE_OK
 
-Set only after the stock game-save completion callback/result has positively indicated success for the same transaction. This is the minimum stage that permits automatic Commit.
+Verified semantic point:
+
+```text
+0x002B1F4C  case5 entry
+```
+
+The previous case4 branches here only when the game-save poll returned `1`.
 
 ### REMOTE_COMPLETE_STARTED
 
-Optional but useful diagnostic stage set immediately before stock CompleteUpdate is initiated. It still permits Commit on restart because GAME_SAVE_OK has already been proven.
+Verified semantic point:
+
+```text
+0x002B20A0  case9 entry
+```
+
+This stage may remain useful for diagnostics/fault injection.
 
 ## Recovery Policy
 
@@ -107,44 +199,87 @@ updateVersion
 size
 ```
 
-Decision:
+Current experimental action table remains:
 
 ```text
 marker invalid/not exact    -> stock mismatch
 stage < TX_BOUND            -> stock mismatch
 TX_BOUND                    -> ROLLBACK
 GAME_SAVE_STARTED           -> ROLLBACK
-GAME_SAVE_OK                -> COMMIT
-REMOTE_COMPLETE_STARTED     -> COMMIT
-unknown/newer stage         -> fail closed to stock mismatch unless explicitly supported
+GAME_SAVE_OK                -> COMMIT      [experimental]
+REMOTE_COMPLETE_STARTED     -> COMMIT      [experimental]
+unknown/newer stage         -> fail closed
 ```
 
-The recovered runtime record must be built from the current server transaction, not stale local/game data. Only `status` is selected by policy:
+The recovered runtime context must be built from the current server transaction, not stale local/game data. Only the direction/status is selected:
 
 ```text
 ROLLBACK -> status = 1
 COMMIT   -> status = 2
 ```
 
-Then rejoin the corresponding stock recovery path.
+## Exact state18 Hook Surface
 
-## Why GAME_SAVE_OK Is the Commit Boundary
+Both dataId and curVersion mismatch branches converge at:
 
-Stock Bank deliberately places the game save between remote staging and final Complete. If the game-save callback returned success, the game-side recovery bookkeeping/main is known to have crossed the transaction boundary. A lost or failed network Complete after that point is the exact case where retrying stock Commit is aligned with the original transaction intent.
+```asm
+0x002A8AD0  MOV r0,#8
+```
 
-`GAME_SAVE_STARTED` is insufficient because power loss/write failure can occur after start but before durable completion.
+Original bytes:
+
+```text
+08 00 A0 E3
+```
+
+At this point `r4` is the state18 object and `[r4+0x28]` points to the current server pending transaction. A recovery shim can therefore fail closed to the original instruction or build the canonical transaction context from the current server tx and select:
+
+```text
+substate 5 -> stock Commit
+substate 6 -> stock Rollback
+```
+
+Stock operations remain:
+
+```text
+0x001D5D74 Commit
+0x001D5C28 Rollback
+```
+
+No custom network implementation is required.
+
+## Why Commit stays experimental
+
+A `GAME_SAVE_OK` marker records our observation that stock game save previously succeeded. But if the next state18 cannot match the game recovery record that stock wrote before that save, one of the assumptions below has failed:
+
+- the game recovery object did not persist as expected;
+- another stock cleanup path altered it;
+- the server transaction changed;
+- the observed stage did not correspond to durable save completion;
+- an additional failure mode exists outside current static analysis.
+
+Therefore B must not silently treat `GAME_SAVE_OK` as sufficient production evidence until fault injection demonstrates the exact combination and a repeated Commit is safe.
+
+The intended A/B comparison is now:
+
+```text
+A: exact owned mismatch -> always Rollback
+B: exact owned mismatch -> stage-aware action for controlled validation
+```
+
+with A remaining the preferred safety baseline.
 
 ## Runtime Mutation Policy
 
-As with Variant A, prefer runtime repair first:
+Prefer runtime repair first:
 
 1. Read and validate bound marker against current server pending transaction.
-2. Build a temporary recovery context from the server transaction.
-3. Set `status=1` or `2` according to the marker stage.
-4. Rejoin stock Rollback/Commit.
+2. Build a temporary state18 transaction context from the current server transaction.
+3. Select stock Rollback or experimental Commit according to policy.
+4. Rejoin stock substate 6 or 5.
 5. Only after remote success allow stock cleanup/persistence and remove the marker.
 
-Do not pre-write a fabricated recovery record to raw game `main` merely to satisfy the compare unless static control-flow analysis proves that stock helpers require it. If persistence before remote action is unavoidable, use stock family-specific writer/save paths, never raw offsets/checksum bypasses.
+Do not pre-write a fabricated recovery record to raw game `main` merely to satisfy the compare. If persistence before remote action is ever required, use stock family-specific writer/save paths, never raw offsets/checksum bypasses.
 
 ## Idempotence and Restart Safety
 
@@ -154,21 +289,21 @@ Recovery itself can fail again due to network loss. Therefore:
 - retrying with the same exact server transaction repeats the same decision;
 - a changed/nonmatching server transaction causes fail-closed behavior;
 - if server has no matching pending transaction, perform local marker cleanup only;
-- never "upgrade" a stale marker to a new server transaction during recovery.
+- never upgrade a stale marker to a new server transaction during recovery.
 
 ## Hook Surface
 
-Variant B requires more stock observation points than A:
+Variant B runtime observation points are now:
 
 1. state16 bulk-apply success -> `BULK_APPLIED`;
-2. state7 Prepare/Stage success -> `TX_BOUND`;
-3. immediately before game save starts -> `GAME_SAVE_STARTED`;
-4. positive game-save completion branch/callback -> `GAME_SAVE_OK`;
-5. optional pre-Complete branch -> `REMOTE_COMPLETE_STARTED`;
-6. state18 mismatch edge -> exact marker match, policy decision, runtime recovery reconstruction, stock Commit/Rollback rejoin;
-7. normal Complete success and recovery Commit/Rollback success -> marker cleanup.
+2. **PrepareUpdate response before HPP completion -> `TX_BOUND`**;
+3. `0x002B1F1C` -> `GAME_SAVE_STARTED`;
+4. `0x002B1F4C` -> `GAME_SAVE_OK`;
+5. `0x002B20A0` -> `REMOTE_COMPLETE_STARTED`;
+6. `0x002A8AD0` state18 mismatch convergence -> exact marker match + policy + stock recovery rejoin;
+7. normal/recovery success -> marker cleanup.
 
-Each hook requires exact machine-code verification against the stock `.code` hash and a patch whitelist.
+Only item 2 still needs an exact machine-code address. The other state7/state18 points are verified against the exact stock SHA.
 
 ## Safety Gates
 
@@ -178,42 +313,24 @@ Automatic Commit is forbidden unless all are true:
 - active profile matches marker;
 - marker is bound to current server pending transaction across all transaction fields;
 - marker stage is `GAME_SAVE_OK` or `REMOTE_COMPLETE_STARTED`;
-- code is executing in the known state18 mismatch recovery context;
-- server transaction status is compatible with the stock recovery operation being retried.
+- code is executing in the verified state18 mismatch context;
+- server transaction status is compatible with the stock recovery operation;
+- hardware fault-injection evidence has validated this stage/mismatch combination.
 
-If any condition is uncertain, downgrade to Rollback only when exact transaction ownership is still proven; otherwise retain stock mismatch behavior.
-
-## Relationship to Variant A
-
-Variant B should share a common pure recovery policy layer with A where possible:
-
-```text
-validate marker
-validate exact transaction ownership
-build runtime recovery record
-cleanup marker
-```
-
-Only the action selector differs:
-
-```text
-A: exact owned mismatch -> always ROLLBACK
-B: exact owned mismatch -> COMMIT iff GAME_SAVE_OK+, else ROLLBACK
-```
-
-Keeping the common layer equivalent makes hardware A/B comparison meaningful.
+Before hardware validation of the last condition, smart Commit remains experimental and A-style Rollback is the safety reference.
 
 ## Code-Space Constraints
 
-- Existing V3 RX tail is limited (`0x00313910..0x00314000`).
-- Variant B adds stage hooks, so code-size pressure is higher than A.
-- Prefer tiny assembly branch shims and a compact shared marker/policy helper.
-- Do not execute code from mapped `.data`.
-- If safe RX space cannot be proven, stop at a statically verified experimental source build rather than using an unsafe cave.
+- Existing V3 RX tail is limited to `0x00313910..0x00314000` (`0x6F0`).
+- Existing Bulk V3 already uses most of it.
+- Variant B adds more observation hooks than A, so code pressure is higher.
+- Prefer tiny ARM shims and reuse common marker/FS code.
+- Do not execute from `.data` / `.rodata` / `.bss`.
+- If extra RX space is needed, use only a stock function body proven unreachable by XREF/CFG analysis.
 
 ## Testing
 
-Host tests must pin the action table:
+Host tests continue to pin the experimental action table:
 
 ```text
 exact + TX_BOUND                -> ROLLBACK
@@ -225,27 +342,29 @@ pending-only                    -> BLOCK
 unknown stage                   -> BLOCK
 ```
 
-Additional tests:
+Real-hardware fault matrix must place special emphasis on:
 
-- marker downgrade/rewind is rejected;
-- stage update cannot change transaction identity;
-- profile mismatch blocks;
-- corrupted marker blocks;
-- stale marker + no server pending -> cleanup only;
-- normal stock matching local/game record bypasses tool policy entirely;
-- repeated recovery retry is idempotent.
-
-Real-hardware fault matrix should attempt failures at observable boundaries:
-
-1. before Prepare;
-2. after Prepare / before game save;
-3. during game save;
-4. after game-save success / before Complete;
-5. during Complete;
+1. failure before Prepare response;
+2. **failure after Prepare response but before state7 case3**;
+3. failure after case3 but before game save success;
+4. failure after GAME_SAVE_OK;
+5. failure during Complete;
 6. clean success.
 
-Capture marker stage, server pending metadata, whether stock local/game recovery records match, chosen action, remote result, and subsequent ability to re-enter Bank.
+For each run record:
+
+```text
+server pending transaction
+marker stage / tx
+stock local recovery record
+stock game recovery record
+state18 action
+remote result
+subsequent Bank re-entry
+```
+
+The key research question for B is whether a real `GAME_SAVE_OK+` marker can ever coincide with both stock recovery records failing to match the same exact server transaction.
 
 ## Success Criterion
 
-For an exact tool-owned bulk transaction, network interruption no longer causes a permanent mismatch lock. Transactions that reached confirmed game-save success are retried through stock Commit when safe; earlier/ambiguous transactions are safely rolled back. Unrelated or unverifiable sessions retain stock behavior.
+For an exact tool-owned bulk transaction, network interruption no longer causes a permanent mismatch lock. Earlier/ambiguous transactions are safely rolled back. Smart Commit remains available only when positive stage evidence plus hardware validation justify it. Unrelated or unverifiable sessions retain stock behavior.
