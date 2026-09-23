@@ -74,3 +74,12 @@ jobs:
             bank/src/official_bulk_sync_core.c \
             -o /tmp/bulk_test
           /tmp/bulk_test
+
+      - name: Measure smart production ARM payload
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi
+          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/smart-prod.o
+          arm-none-eabi-size /tmp/smart-prod.o
+          arm-none-eabi-nm -S --size-sort /tmp/smart-prod.o | tail -80
