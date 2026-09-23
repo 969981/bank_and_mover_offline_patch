@@ -36,9 +36,12 @@ jobs:
             --output /tmp/official-bank-recovery-chain.txt \
             --require-all
           echo '=== recovery-chain report summary ==='
-          sed -n '1,260p' /tmp/official-bank-recovery-chain.txt
+          sed -n '1,320p' /tmp/official-bank-recovery-chain.txt
           echo '=== target count ==='
-          grep -c '^===== TARGET ' /tmp/official-bank-recovery-chain.txt | grep '^7$'
+          expected=$(grep -v '^[[:space:]]*#' bank/tools/recovery_targets.txt | sed '/^[[:space:]]*$/d' | wc -l)
+          actual=$(grep -c '^===== TARGET ' /tmp/official-bank-recovery-chain.txt)
+          echo "expected=$expected actual=$actual"
+          test "$actual" -eq "$expected"
 
       - name: Upload recovery-chain report
         uses: actions/upload-artifact@v4
