@@ -35,6 +35,19 @@ jobs:
           python bank/tools/extract_recovery_functions.py \
             bank/docs/code.bin_all_functions.c \
             --output /tmp/bank-recovery-functions.txt
+          python bank/tools/extract_recovery_functions.py \
+            bank/docs/code.bin_all_functions.c \
+            --address 002ad724 \
+            --reference DAT_002a6584 \
+            --reference FUN_002ad724 \
+            --reference FUN_002a8760 \
+            --reference FUN_002a93f4 \
+            --reference DAT_002a6578 \
+            --reference DAT_002a6574 \
+            --context-lines 24 \
+            --output /tmp/bank-recovery-xrefs.txt
+          printf '\n\n' >> /tmp/bank-recovery-functions.txt
+          cat /tmp/bank-recovery-xrefs.txt >> /tmp/bank-recovery-functions.txt
 
       - name: Upload stock recovery static report
         uses: actions/upload-artifact@v4
