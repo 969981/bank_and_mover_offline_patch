@@ -5,22 +5,25 @@ BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
 TAIL_START = 0x00313910
 TAIL_END = 0x00314000
+RECOVERY_SESSION_FLAG = 0x003ABFFC
 
-# Variant A is deliberately minimal: Bulk entry + pre-RMC52 case1 diversion +
-# case8 journal-result hook. case7 stays native status=1 and state18 is stock.
+# Variant A is rollback-only for Bulk sessions: pre-RMC52 durable status=1 WAL,
+# then case5 is hooked so a successful game save cannot upgrade the local
+# recovery record to status=2. Ordinary Bank sessions retain stock behavior.
 ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
     (0x002B1DE4,0x002B1DE8,"recovery A pre-RMC52 journal entry"),
+    (0x002B1F50,0x002B1F54,"recovery A rollback-only case5 status"),
     (0x002B2090,0x002B2094,"recovery A case8 journal result"),
     (TAIL_START,TAIL_END,"official RX text-tail payload"),
 ]
 REQUIRED_CHANGED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update"),
     (0x002B1DE4,0x002B1DE8,"A case1 prejournal"),
+    (0x002B1F50,0x002B1F54,"A case5 rollback-only status selector"),
     (0x002B2090,0x002B2094,"A case8 result"),
 ]
-# These are intentionally stock in A and guard against accidentally drifting
-# back toward the older private-status/state18-hook implementation.
+# case7 and state18 remain stock; A deliberately uses native status=1 recovery.
 REQUIRED_STOCK = [
     (0x002B1FFC,0x002B2000,"stock case7 status=1"),
     (0x002A8968,0x002A897C,"stock local recovery status decision"),
@@ -30,6 +33,7 @@ REQUIRED_STOCK = [
 EXPECTED_TAIL_SYMBOLS = {
     "officialbulk_bankdatasyncdispatch",
     "officialrecovery_walcase1",
+    "officialrecovery_walcase5status",
     "officialrecovery_walcase8result",
     "officialbulksync_process",
 }
@@ -79,6 +83,8 @@ def main():
     assert hashlib.sha256(base).hexdigest()==BASE_SHA256, "unexpected Bank v1.5 base SHA-256"
     assert len(base)==len(patched)==0x2AC000, "patched .code size changed"
     assert not any(addr_slice(base,TAIL_START,TAIL_END)), "verified RX tail is not zero in stock image"
+    assert addr_slice(base,RECOVERY_SESSION_FLAG,RECOVERY_SESSION_FLAG+4)==b"\0\0\0\0", \
+        "recovery session scratch is not zero in stock Bank v1.5"
 
     changed=0
     for i,(a,b) in enumerate(zip(base,patched)):
