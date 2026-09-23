@@ -7,6 +7,7 @@ on:
     paths:
       - bank/tools/extract_recovery_chain.py
       - bank/tools/test_extract_recovery_chain.py
+      - bank/tools/disassemble_recovery_gate.py
       - bank/tools/recovery_targets.txt
       - bank/docs/code.bin_all_functions.c
       - bank/src/official_recovery_probe.h
@@ -28,8 +29,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test Ghidra recovery extractor
-        run: python bank/tools/test_extract_recovery_chain.py
+      - name: Test recovery analysis tools
+        run: |
+          python bank/tools/test_extract_recovery_chain.py
+          python -m py_compile bank/tools/extract_recovery_chain.py bank/tools/disassemble_recovery_gate.py
+          set +e
+          python bank/tools/disassemble_recovery_gate.py --code /tmp/definitely-missing.code >/tmp/missing.out 2>/tmp/missing.err
+          rc=$?
+          set -e
+          test "$rc" -eq 2
+          grep -q 'missing stock .code' /tmp/missing.err
 
       - name: Extract recovery-state functions
         run: |
