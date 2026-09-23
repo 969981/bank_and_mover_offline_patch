@@ -1,0 +1,66 @@
+name: official-bank-recovery-b-ci
+
+on:
+  push:
+    branches:
+      - feature/official-bank-recovery-smart
+  workflow_dispatch:
+
+jobs:
+  host-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Staged recovery marker contract
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_marker_host_test.c \
+            bank/src/official_recovery_marker_core.c \
+            -o /tmp/marker_test
+          /tmp/marker_test
+
+      - name: Smart recovery policy
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_smart_host_test.c \
+            bank/src/official_recovery_smart_core.c \
+            bank/src/official_recovery_marker_core.c \
+            -o /tmp/smart_policy_test
+          /tmp/smart_policy_test
+
+      - name: Marker persistence contract
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_marker_io_host_test.c \
+            bank/src/official_recovery_marker_io_core.c \
+            bank/src/official_recovery_marker_core.c \
+            -o /tmp/marker_io_test
+          /tmp/marker_io_test
+
+      - name: Smart runtime lifecycle
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_smart_runtime_host_test.c \
+            bank/src/official_recovery_smart_runtime_core.c \
+            bank/src/official_recovery_smart_core.c \
+            bank/src/official_recovery_marker_io_core.c \
+            bank/src/official_recovery_marker_core.c \
+            -o /tmp/smart_runtime_test
+          /tmp/smart_runtime_test
+
+      - name: Existing stock recovery model
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_probe_host_test.c \
+            bank/src/official_recovery_probe_core.c \
+            -o /tmp/probe_test
+          /tmp/probe_test
+
+      - name: Existing bulk sync regression
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_bulk_sync_host_test.c \
+            bank/src/official_bulk_sync_core.c \
+            -o /tmp/bulk_test
+          /tmp/bulk_test
