@@ -1,10 +1,6 @@
 #include <assert.h>
 #include "official_recovery_probe.h"
 
-/* Deliberately declared here first so the test goes RED until the core contract is implemented. */
-int OfficialRecovery_BuildRollbackRecord(const OfficialRecoveryRecord *server,
-    OfficialRecoveryRecord *gameOut);
-
 static OfficialRecoveryRecord rec(unsigned long long id,unsigned version,unsigned status)
 {
     OfficialRecoveryRecord r={0};
@@ -64,7 +60,7 @@ int main(void)
         server.curVersion=41;
         server.updateVersion=42;
         server.size=0xBB518u;
-        server.status=2; /* server status is not copied; repair deliberately requests rollback */
+        server.status=2; /* not copied: explicit repair requests rollback */
 
         assert(OfficialRecovery_BuildRollbackRecord(&server,&rebuilt)==1);
         assert(rebuilt.dataId==server.dataId);
