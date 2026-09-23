@@ -12,27 +12,18 @@ EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40
 
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
+    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    "save_case7_status_immediate": (0x002B1FFC, bytes.fromhex("01 10 a0 e3")),
+    "save_case8_success_move": (0x002B2094, bytes.fromhex("0b 00 a0 03")),
+    "state18_local_status2_cmp": (0x002A8974, bytes.fromhex("02 00 50 e3")),
     "save_stage_tx_load": (0x002B2494, bytes.fromhex("28 30 94 e5")),
     "save_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
 
-AUTO = {
-    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
-    "save_case7_status1_entry": (0x002B1FF8, bytes.fromhex("08 00 94 e5")),
-    "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
-}
+AUTO = {}
 
 SMART = {
-    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
-    "save_case7_status1_entry": (0x002B1FF8, bytes.fromhex("08 00 94 e5")),
-    "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
-    "state18_local_dataid_mismatch_bne": (0x002A8904, bytes.fromhex("1c 00 00 1a")),
-    "state18_local_curversion_mismatch_bne": (0x002A891C, bytes.fromhex("16 00 00 1a")),
-    "state18_local_status_decision": (0x002A8968, bytes.fromhex("01 00 50 e3")),
-    "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
-    "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
-    "save_game_started": (0x002B1F1C, bytes.fromhex("04 00 a0 e3")),
-    "save_game_result_dispatch": (0x002B1F48, bytes.fromhex("89 00 00 ea")),
+    "state18_game_mismatch_funnel": (0x002A8AD0, bytes.fromhex("08 00 a0 e3")),
 }
 
 
