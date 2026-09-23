@@ -10,16 +10,17 @@
 .definelabel OfficialBulk_CodeEnd,   TextMappedEnd
 
 // Recovery A save-state landmarks verified against Bank v1.5.
-.definelabel RecoveryA_SaveCase1,         0x002B1DE4
-.definelabel RecoveryA_SaveCase7,         0x002B1FF8
-.definelabel RecoveryA_SaveCase8Result,   0x002B2090
-.definelabel RecoveryA_SaveSetSubstate,   0x002B2174
+.definelabel RecoveryA_SaveCase1,          0x002B1DE4
+.definelabel RecoveryA_SaveCase5Status,    0x002B1F50
+.definelabel RecoveryA_SaveCase7,          0x002B1FF8
+.definelabel RecoveryA_SaveCase8Result,    0x002B2090
+.definelabel RecoveryA_SaveSetSubstate,    0x002B2174
 
 // Private transient markers stored in state+0x48 only before RMC52 starts.
 // The byte is cleared immediately before BankSave_SerializeAndStage, so stock
 // remote callbacks keep their native 0/1 semantics afterwards.
-.definelabel RecoveryA_JournalSaving,      7
-.definelabel RecoveryA_JournalReady,       8
+.definelabel RecoveryA_JournalSaving,       7
+.definelabel RecoveryA_JournalReady,        8
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
 
@@ -28,22 +29,23 @@
     b OfficialBulk_BankDataSyncDispatch
 
 // -----------------------------------------------------------------------------
-// Recovery A: pre-RMC52 write-ahead rollback journal
+// Recovery A: durable rollback journal for every unresolved remote transaction
 // -----------------------------------------------------------------------------
 // Before the first remote Stage/Prepare request, persist the exact current
 // BankTransactionParam into the stock Bank-local RecoveryRecord with status=1.
-// This closes the dangerous window where the server can have a pending tx while
-// neither the game nor local recovery record has been committed yet.
-//
-// We reuse stock case7/case8 for the actual local-record write and async save.
-// No state18 Trainer/save mismatch branch is bypassed.
+// This closes the earliest window where the server can have a pending tx while
+// neither game nor local recovery state is durable.
 .org RecoveryA_SaveCase1
     b OfficialRecovery_A_PreStageJournal
 
-// case8 is the stock local-save poll result for the status=1 path.  During the
-// private pre-journal pass, route success back to case1 so RMC52 can start only
-// after the rollback journal is durable.  All normal later case8 uses retain
-// stock behavior.
+// After game save succeeds, stock case5 normally upgrades the local record to
+// status=2. Variant A deliberately keeps status=1 until remote Complete really
+// succeeds. Therefore any restart with an unresolved server transaction chooses
+// stock Rollback, even if game save itself had already succeeded.
+.org RecoveryA_SaveCase5Status
+    mov r1,#1
+
+// Reuse stock case7/case8 for the pre-Stage local journal persistence.
 .org RecoveryA_SaveCase8Result
     b OfficialRecovery_A_AfterJournalPersist
 
@@ -62,10 +64,6 @@ OfficialBulk_BankDataSyncDispatch:
     b BankDataSyncState_Update + 4
     .pool
 
-// First visit to stock case1: detour to case7 so stock writes status=1 using
-// the exact state+0x28 transaction and persists it locally.  The second visit
-// arrives with JournalReady, clears the private byte, then resumes the original
-// SerializeAndStage call and its stock result handling at case1+8.
 OfficialRecovery_A_PreStageJournal:
     ldrb r1,[r4,#0x48]
     cmp r1,#RecoveryA_JournalReady
@@ -81,11 +79,6 @@ OfficialRecovery_A_PreStageJournal:
     bl BankSave_SerializeAndStage
     b RecoveryA_SaveCase1 + 8
 
-// r0 is the stock local-save poll result; zero/pending was already handled by
-// 0x002B208C before this hook.  During the pre-journal pass, success returns to
-// case1 and failure uses the stock save-failure terminal substate 20.  During
-// every ordinary later case8 use, re-execute the displaced CMP and continue at
-// 0x002B2094 unchanged.
 OfficialRecovery_A_AfterJournalPersist:
     ldrb r1,[r4,#0x48]
     cmp r1,#RecoveryA_JournalSaving
