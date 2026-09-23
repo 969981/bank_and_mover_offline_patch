@@ -35,3 +35,16 @@ OfficialRecoveryDecision OfficialRecovery_Classify(unsigned long long serverData
         return decide(gameRecord,OFFICIAL_RECOVERY_SOURCE_GAME);
     return d;
 }
+
+int OfficialRecovery_BuildRollbackRecord(const OfficialRecoveryRecord *server,
+    OfficialRecoveryRecord *gameOut)
+{
+    if (!server || !gameOut) return 0;
+    gameOut->dataId=server->dataId;
+    gameOut->transactionPassword=server->transactionPassword;
+    gameOut->curVersion=server->curVersion;
+    gameOut->updateVersion=server->updateVersion;
+    gameOut->size=server->size;
+    gameOut->status=1u;
+    return 1;
+}
