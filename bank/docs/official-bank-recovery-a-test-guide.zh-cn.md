@@ -1,194 +1,180 @@
-# Official Bank Recovery A 实机验证指南
+# Official Bank Recovery A：Rollback-only 实机验证指南
 
 > 分支：`feature/official-bank-recovery-auto-rollback`
 >
-> 状态：`EXPERIMENTAL / STATIC + HOST VERIFIED / HARDWARE FAULT TEST PENDING`
+> 状态：`EXPERIMENTAL / CIA + MACHINE-CODE + CI VERIFIED / HARDWARE FAULT TEST PENDING`
 
-## 1. 最终目标
+## 1. 目标
 
-Variant A 严格按最初定义实现：**只要 stock recovery 已经无法使用本地/游戏 recovery record、即将进入 state18 的 mismatch/error substate 8，就放弃这一次 pending transaction，使用 CURRENT server transaction 走原版 Rollback。**
+A 的定义保持为：**只要远端事务没有真正 Complete，重启恢复时一律以 Rollback 为安全方向。**
 
-它不再使用 OBRX marker，也不判断该 pending transaction 是否来自 bulk session。原因是 A 本身就是“最简单、最保守”的解锁方案：
-
-```text
-stock 能自己恢复 -> 完全 stock
-stock 准备进入 mismatch/error -> 强制 Rollback CURRENT server tx
-```
-
-因此网络失败那一次 staged Bank 更新会被放弃，但客户端不会长期停在 Trainer/save mismatch。
-
-## 2. Verified stock machine-code path
-
-真实 NoCrypto CIA 已直接拆包并验证：
+新的实现不再等 Trainer/save mismatch 出现后强行绕过 state18，而是在服务器能够建立 pending transaction **之前**先建立一个可持久恢复的 stock rollback journal：
 
 ```text
-Title ID           00040000000C9B00
-.code size         0x2AC000
-.code SHA-256      2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF
+当前 BankTransactionParam 已完整存在
+        ↓
+先写 Bank-local RecoveryRecord
+status = 1
+        ↓
+本地保存成功
+        ↓
+才允许 RMC52 / Stage / PrepareUpdate
+        ↓
+游戏保存
+        ↓
+A 仍把 Bank-local record 保持为 status=1
+        ↓
+Complete 成功 -> stock cleanup
+Complete 未成功 -> 下次 stock state18 自动 Rollback
 ```
 
-state18 两个会把 substate 置为 8 的 funnel：
+因此 A 的原则不是“跳过校验”，而是**保证校验永远有一份 exact、可回滚的原生 recovery record 可用**。
+
+## 2. 为什么要在 Stage 前写 journal
+
+已从 NoCrypto Bank CIA 直接拆出并验证：
 
 ```text
-0x002A8A74  MOV R0,#8   // matched record but invalid status
-0x002A8AD0  MOV R0,#8   // local/game transaction mismatch
+Title ID      00040000000C9B00
+.code size    0x2AC000
+SHA-256       2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF
 ```
 
-A 将二者都 branch 到：
+`BankSave_SerializeAndStage @ 0x002B2320` 在真正发出远端请求前已经持有完整 tx：
+
+```asm
+0x002B2494  LDR r3,[r4,#0x28]   ; BankTransactionParam*
+0x002B2498  LDRD r0,r1,[r4,#0x40]
+0x002B249C  MOV r2,r11
+0x002B24A0  BL  0x002A2504      ; BankRemote_StageFileUpdate / RMC52 path
+```
+
+`0x002A2504` 把这份 0x20-byte transaction 作为请求输入复制后才发起远端操作。因此危险窗口是：**服务器已经创建 pending，但 stock game/local recovery 还没持久化。**
+
+A 在这个窗口之前先持久化 rollback journal。
+
+## 3. A 的两个关键改造
+
+### 3.1 Pre-Stage journal
+
+Hook：
 
 ```text
-0x002A8B4C  OfficialRecovery_A_RollbackShim
+0x002B1DE4  BankSave case1
+0x002B2090  BankSave case8 local-save result
 ```
 
-原版 case8 的前 `0x20` bytes 被复用为 shim。由于 state18 内所有进入 substate 8 的 funnel 均已重定向，A 中这段原版 error-case 代码不再可达。
-
-shim：
+第一次进入 case1 时不立即调用 `BankSave_SerializeAndStage`，而是借用 stock case7：
 
 ```text
-serverTx = *(state + 0x28)
-copy serverTx[0x20] -> state + 0x40
-next substate = 6
+case7 @ 0x002B1FF8
+    ↓
+把 state+0x28 exact tx 写入 Bank-local RecoveryRecord
+status = 1
+    ↓
+调用原版 local save
 ```
 
-然后直接重回 stock：
+只有 local save callback 明确成功后，才回到 case1 发 RMC52。
+
+临时使用 `state+0x48 = 7/8` 仅发生在 RMC52 发出之前；真正 Stage 前清回 0，因此不会污染原版远端 callback 的 0/1 状态。
+
+### 3.2 保持 rollback-only
+
+stock 在游戏保存成功后的 case5 会写：
+
+```asm
+0x002B1F50  MOV r1,#2
+```
+
+即把 Bank-local recovery 升级成 Commit record。
+
+A 将这一条改成：
+
+```asm
+MOV r1,#1
+```
+
+后续字段复制、本地保存、远端 Complete 流程全部保留 stock。
+
+因此只要 Complete 尚未真正成功，restart 后 local exact record 仍是：
 
 ```text
-state18 case6
- -> BankRemote_RollbackStagedUpdate @ 0x001D5C28
+status=1 -> stock Rollback
 ```
 
-没有伪造旧 game/local record，没有 raw-write 游戏 `main`，也没有自定义远端协议。
+这就是 A 与 B 的核心区别。
 
-## 3. 当前自动化验证
+## 4. A 不修改的内容
 
-GitHub Actions `official-bank-recovery-a-ci` 覆盖：
-
-- NoCrypto CIA → NCCH → ExeFS → BLZ `.code` 抽取 helper；
-- stock `.code` size/SHA；
-- `0x002A8A74 / 0x002A8AD0 / 0x002A8B4C` 原始 bytes；
-- auto-rollback host policy；
-- CURRENT server tx → rollback recovery context host model；
-- stock recovery decision model regression；
-- Official Bulk Sync core regression；
-- production Thumb object仍为 1577 bytes；
-- A ARM shim可编码且严格为 `0x20` / 32 bytes。
-
-A 不占用新的 RX-tail 空间；shim 使用原版 case8 的不可达头部。
-
-## 4. 实机故障矩阵
-
-### A0 正常保存
+A **不 Hook**：
 
 ```text
-bulk apply -> Prepare/Stage -> game save -> Complete success
+state18 game dataId BNE
+state18 game curVersion BNE
+Trainer/save mismatch UI funnel
+Commit/Rollback RMC 实现
+游戏 main raw bytes
 ```
 
-预期：
+真实换档、非本事务 mismatch 仍由 stock 校验保护。
 
-- state18 mismatch shim 不执行；
-- 保存结果与原 V3 相同；
-- 下一次正常进入 Bank。
+## 5. 故障矩阵
 
-### A1 网络在 Prepare/Stage 前失败
+| 故障窗口 | A 预期 |
+|---|---|
+| pre-journal local save 失败 | 不发 Stage，保存流程失败，不产生 server pending |
+| journal 成功、Stage 请求尚未成功 | server 无 pending；残留 local status1 不会导致错误 Commit |
+| server pending 后、game recovery 尚未落盘 | 下次 local exact status1 -> stock Rollback |
+| game save 进行中断电/断网 | local status1 -> stock Rollback |
+| game save 已成功、Complete 前断网 | local 仍为 status1 -> stock Rollback |
+| Complete 已成功 | stock 后续 cleanup；不会再恢复旧 pending |
+| unrelated game/save mismatch | 保留 stock mismatch 行为 |
 
-服务器没有可恢复 pending transaction 时，A 无事可做，保持 stock。
+## 6. 自动化验证
 
-预期：不产生新的 Rollback 请求。
+CI 当前检查：
 
-### A2 服务器留下 pending，但 stock local/game record 能正常 match
+- CIA/ExeFS/BLZ extraction helper；
+- stock `.code` size + SHA；
+- `0x002B1DE4 / 0x002B1F50 / 0x002B1FF8 / 0x002B2090 / 0x002B2494 / 0x002B24A0` 原始 bytes；
+- Official Bulk Sync host regression；
+- stock recovery model regression；
+- ARM pre-stage shims 可编码；
+- V3 production Thumb object = 1577 bytes；
+- RX-tail 预算不超过 `0x6F0`。
 
-预期：
+当前尾部估算：
 
 ```text
-stock match
- -> stock status=1 Rollback 或 status=2 Commit
+V3 object     1577
+ARM dispatch    36
+A shims        108
+-----------------
+合计          1721 / 1776
 ```
 
-A 的两个 error funnel 都不会被执行。
+`0x002B1F50` 是原地 4-byte 替换，不消耗 tail。
 
-### A3 真正复现 Trainer/save mismatch
+## 7. 首轮实机验证
 
-条件：
+首轮建议使用可备份测试档，分别在以下点人为断网：
+
+1. 点击保存后立刻；
+2. 等待远端上传时；
+3. 游戏保存提示附近；
+4. 游戏保存完成后、远端完成确认前。
+
+每次记录：
 
 ```text
-server pending transaction 存在
-local recovery 无法 match
-current game recovery 无法 match
+是否留下 server pending
+下次是否进入 stock recovery
+local recovery status/dataId/curVersion
+是否调用 RollbackBankObject
+Rollback 后能否正常重新联动
+BankObject 是否回到事务前版本
+游戏 main 是否仍能正常打开
 ```
 
-原版会走：
-
-```text
-0x002A8AD0 -> substate 8 -> Trainer/save error
-```
-
-A 预期：
-
-```text
-0x002A8AD0
- -> OfficialRecovery_A_RollbackShim
- -> CURRENT server tx copy 到 state+0x40
- -> substate 6
- -> stock RollbackBankObject
-```
-
-Rollback 成功后再次进入 Bank，应不再被同一 pending transaction 锁住。
-
-### A4 recovery record match，但 status 异常
-
-原版会从：
-
-```text
-0x002A8A74 -> substate 8
-```
-
-A 同样转为 CURRENT server tx 的 stock Rollback。
-
-### A5 普通、真实的不同存档 mismatch
-
-A 的取舍与 B 不同：如果服务器确实留有 pending transaction，而当前游戏无法 match，A **仍会 Rollback 服务器 pending transaction**，而不是继续显示 Trainer mismatch。
-
-这是 A 的明确设计代价，也是为什么 A 定位为：
-
-```text
-安全解锁优先 / pending transaction 保留优先级最低
-```
-
-A 不会 Commit 不确定 transaction，因此不会把 staged BankObject正式提交；代价是该 pending 修改被丢弃。
-
-## 5. 必须采集的实机证据
-
-每次网络故障实验至少记录：
-
-```text
-故障发生阶段
-Bank 最终错误文本
-下次启动是否进入 stock recovery
-是否命中 A shim
-server Rollback 返回值
-Rollback 后再次联动是否正常
-BankObject 是否回到故障前版本
-游戏 main 是否仍可正常加载
-```
-
-建议首先用一份可以重复恢复/备份的测试游戏存档验证，不先拿唯一生产存档做首轮 fault injection。
-
-## 6. 与 B 的边界
-
-A：
-
-```text
-无法确认恢复方向 -> 永远 Rollback
-```
-
-B：
-
-```text
-无法确认 stock record
- -> 工具 marker exact-match
- -> GAME_SAVE_STARTED -> Rollback
- -> GAME_SAVE_OK      -> Commit
- -> marker不匹配      -> 保留 stock mismatch
-```
-
-因此 A 是用于先验证“强制走 stock Rollback 是否能稳定清锁”的基准实现；B 才负责尽量保住已经成功推进到 game-save-complete 的 bulk transaction。
+A 的验收标准是：**网络故障最多损失本次尚未 Complete 的 Bulk 更新，但不能再因为该事务进入永久 Trainer/save mismatch 锁。**
