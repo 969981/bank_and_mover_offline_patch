@@ -19,12 +19,11 @@
 .definelabel RecoveryB_LocalDataIdMismatch,     0x002A8904
 .definelabel RecoveryB_LocalVersionMismatch,    0x002A891C
 .definelabel RecoveryB_LocalStatusDecision,     0x002A8968
-.definelabel RecoveryB_LocalMismatchClear,      0x002A8980
 .definelabel RecoveryB_GameCheckEntry,          0x002A8988
 .definelabel RecoveryB_GameDataIdMismatch,      0x002A89D0
 .definelabel RecoveryB_GameVersionMismatch,     0x002A89E0
-.definelabel RecoveryB_State18SetSubstate,      0x002A8980
 .definelabel RecoveryB_State18Commit,            0x002A8AC8
+.definelabel RecoveryB_State18CommonTail,        0x002A8CD8
 
 // Private transient markers used only before RMC52 starts.
 .definelabel RecoveryB_JournalSaving,            7
@@ -50,36 +49,34 @@
 // -----------------------------------------------------------------------------
 // Recovery B: smart state18 decision
 // -----------------------------------------------------------------------------
-// If the local record does not exactly match the CURRENT server transaction,
-// clear the private "local rollback journal verified" flag and inspect the game
-// record exactly as stock does.
+// Local mismatch must NOT inherit a previous +0x88 journal flag.  Clear it in
+// tail code and resume the stock game-record check.
 .org RecoveryB_LocalDataIdMismatch
-    b RecoveryB_LocalMismatchClear
+    bne OfficialRecovery_B_LocalMismatchClear
 .org RecoveryB_LocalVersionMismatch
-    b RecoveryB_LocalMismatchClear
+    bne OfficialRecovery_B_LocalMismatchClear
 
-// Replace only the 0x20-byte local-status decision block.  An exact status=1
-// local record is our durable rollback fallback, but B first inspects the game
-// recovery record: exact game status=2 is stronger evidence that game save was
-// committed and therefore keeps the stock Commit path.  Exact local status=2
-// remains a direct stock Commit.
+// Replace the original 0x20-byte local-status decision block.  Exact local
+// status=1 becomes a durable Rollback fallback, but B first inspects the game
+// record.  Exact local status=2 remains a direct Commit.  Invalid local status
+// clears the private flag and falls through to the stock game check.
 .org RecoveryB_LocalStatusDecision
 .area 0x20
     cmp r0,#1
-    moveq r1,#2
-    streqb r1,[r4,#0x88]
-    beq RecoveryB_GameCheckEntry
+    bne @@notRollbackJournal
+    mov r1,#2
+    strb r1,[r4,#0x88]
+    b RecoveryB_GameCheckEntry
+@@notRollbackJournal:
     cmp r0,#2
     beq RecoveryB_State18Commit
-RecoveryB_LocalMismatchClear:
-    mov r1,#0
-    strb r1,[r4,#0x88]
+    b OfficialRecovery_B_LocalMismatchClear
 .endarea
 
-// Hook only the two real game transaction mismatch branches.  Never hook the
-// shared state=8 funnel.  If an exact local status=1 journal was verified, a
-// game mismatch means game save was not proven durable -> stock Rollback.
-// Otherwise preserve stock mismatch behavior.
+// Hook only the two real game transaction mismatch branches.  If an exact
+// local status=1 journal was verified, game mismatch means there is no durable
+// game status=2 evidence, so use stock Rollback.  Without that exact local
+// fallback, preserve stock substate8/Trainer-save mismatch behavior.
 .org RecoveryB_GameDataIdMismatch
     bne OfficialRecovery_B_GameMismatchDecision
 .org RecoveryB_GameVersionMismatch
@@ -135,16 +132,24 @@ OfficialRecovery_B_AfterJournalPersist:
     cmp r0,#1
     b RecoveryB_SaveCase8Result + 4
 
+// Local dataId/version mismatch or invalid local status.  Clear the private
+// journal-source flag and resume stock game recovery validation.
+OfficialRecovery_B_LocalMismatchClear:
+    mov r1,#0
+    strb r1,[r4,#0x88]
+    b RecoveryB_GameCheckEntry
+
 // Called only from the two exact game mismatch BNEs.  state+0x88==2 is set
 // only after the immediately preceding local record exactly matched server
 // dataId/curVersion and carried status=1.  state+0x40 already contains that
-// exact local transaction, so case6 can use the stock Rollback routine.
+// exact local transaction.
 OfficialRecovery_B_GameMismatchDecision:
     ldrb r0,[r4,#0x88]
     cmp r0,#2
     moveq r0,#6
     movne r0,#8
-    b RecoveryB_State18SetSubstate
+    str r0,[r4,#0x10]
+    b RecoveryB_State18CommonTail
 
 .align 2
     .importobj "../build/official_bulk_sync_prod.o"
