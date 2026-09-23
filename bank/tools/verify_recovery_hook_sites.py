@@ -9,6 +9,8 @@ from pathlib import Path
 IMAGE_BASE = 0x00100000
 EXPECTED_SIZE = 0x2AC000
 EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
+RECOVERY_SESSION_FLAG = 0x003ABFFC
+RECOVERY_SESSION_STOCK = b"\x00\x00\x00\x00"
 
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
@@ -18,9 +20,10 @@ COMMON = {
 }
 
 AUTO = {
-    # Variant A adds only the pre-RMC52 diversion and case8 journal result hook.
-    # case7 keeps stock status=1 and state18 remains completely stock.
     "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    # Stock case5 upgrades local recovery to status=2; A replaces this only for
+    # an armed Bulk session so the durable fallback remains rollback-only.
+    "save_case5_status_immediate": (0x002B1F50, bytes.fromhex("02 10 a0 e3")),
     "save_case8_result_cmp": (0x002B2090, bytes.fromhex("01 00 50 e3")),
 }
 
@@ -57,6 +60,13 @@ def verify_blob(blob: bytes, variant: str, check_hash: bool = True):
     if check_hash and hashlib.sha256(blob).hexdigest() != EXPECTED_SHA256:
         errors.append("sha256 mismatch")
     if len(blob) >= EXPECTED_SIZE:
+        scratch = RECOVERY_SESSION_FLAG - IMAGE_BASE
+        got_scratch = blob[scratch:scratch + len(RECOVERY_SESSION_STOCK)]
+        if got_scratch != RECOVERY_SESSION_STOCK:
+            errors.append(
+                f"recovery_session_scratch 0x{RECOVERY_SESSION_FLAG:08X}: "
+                f"got {got_scratch.hex()} want {RECOVERY_SESSION_STOCK.hex()}"
+            )
         for name, (va, wanted) in sites_for(variant).items():
             off = va - IMAGE_BASE
             got = blob[off:off + len(wanted)]
@@ -81,6 +91,7 @@ def main(argv=None):
             print(f"error: {error}", file=sys.stderr)
         return 2
     print(f"OK variant={args.variant} size=0x{len(blob):X} sha256={hashlib.sha256(blob).hexdigest()}")
+    print(f"recovery_session_scratch=0x{RECOVERY_SESSION_FLAG:08X} bytes={RECOVERY_SESSION_STOCK.hex(' ')}")
     for name, (va, wanted) in sites_for(args.variant).items():
         print(f"{name}=0x{va:08X} bytes={wanted.hex(' ')}")
     return 0
