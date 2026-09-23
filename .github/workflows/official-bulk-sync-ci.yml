@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/official-bank-bulk-sync
+      - feature/official-bank-recovery-research
     paths:
       - bank/src/official_bulk_sync.c
       - bank/src/official_bulk_sync_core.c
@@ -13,6 +14,9 @@ on:
       - bank/src/main_official.s
       - bank/src/Makefile
       - bank/src/verify_official_bulk_sync.py
+      - bank/tools/extract_recovery_functions.py
+      - bank/tools/test_extract_recovery_functions.py
+      - bank/docs/code.bin_all_functions.c
       - .github/workflows/official-bulk-sync-ci.yml
   workflow_dispatch:
 
@@ -26,6 +30,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
+
+      - name: Run recovery extractor unit tests
+        run: |
+          python -m unittest bank/tools/test_extract_recovery_functions.py -v
+
+      - name: Extract stock recovery state functions
+        run: |
+          python bank/tools/extract_recovery_functions.py \
+            bank/docs/code.bin_all_functions.c \
+            --output /tmp/bank-recovery-functions.txt
+
+      - name: Upload stock recovery static report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bank-recovery-static-report
+          path: /tmp/bank-recovery-functions.txt
+          if-no-files-found: error
 
       - name: Run host merge and state-gating contract test
         run: |
