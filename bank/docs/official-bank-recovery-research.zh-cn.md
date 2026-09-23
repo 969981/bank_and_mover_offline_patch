@@ -2,70 +2,264 @@
 
 > 分支：`feature/official-bank-recovery-research`
 >
-> 基线：从 `feature/official-bank-bulk-sync` 派生。目标不是重新实现服务器协议，而是解释并复现实机现象：Official Bulk Sync 正常情况下可保存成功；若保存过程中发生网络故障，下一次仍使用同一份、未通过 JKSM 恢复且未人工修改的游戏存档联动 Bank，客户端有时会提示训练家/存档不一致并阻止继续。
+> 基线：从 `feature/official-bank-bulk-sync` 派生。研究现象：Official Bulk Sync 正常情况下可以成功保存；若保存过程中发生网络故障，下一次仍使用同一份、未通过 JKSM 恢复且未人工修改的游戏存档联动 Bank，客户端有时会提示训练家/存档不一致并阻止继续。
 
-## 1. 已确认边界
+详细地址与伪代码见：[`official-bank-recovery-address-map.zh-cn.md`](./official-bank-recovery-address-map.zh-cn.md)。
 
-1. Official Bulk Sync V3 只在 `0x002AF460 BankDataSyncState_Update` 的普通游戏 full-download 路径修改 runtime `BankObject`；不直接写游戏 `main`。
-2. 用户在 Bank UI 保存后仍走原版保存事务：`PrepareUpdateBankObject -> HPP upload -> game/local save -> CompleteUpdateBankObject`；失败走 `RollbackBankObject`。
-3. 原版恢复相关状态至少包括：
-   - state 8 `0x002ACBDC`：查询远端记录/事务状态；
-   - state 11 `0x002AF034`：检查服务器事务并选择恢复路径；
-   - state 17 `0x002A93F4`：另一侧事务恢复/重试；
-   - state 18 `0x002A8760`：当前用户事务恢复/重试；
-   - state 22 `0x002A9118`：保存失败处理；
-   - state 23 `0x002AD7BC`：强制回滚/事务恢复；
-   - state 7 `0x002B1CF8`：保存、提交和回滚状态机。
-4. `GetTransactionParam(slotId)` 返回 `BankTransactionParam + pStatus + pApplicationId`；客户端静态代码至少比较 `pStatus==52` 与 `pStatus==53`，与 `PrepareUpdateBankObject` / `CompleteUpdateBankObject` 方法号对应。
-5. BankObject 自身在 `0xAD61C` 起包含 `8 × 0x44` source-game records。当前 Viewer 已按每条 `name[26] + sex:u16 + trainer_id:u32 + stats[9]:u32` 解析。这意味着“训练家不一致”的候选输入不只游戏侧 Bank linkage，也可能包括服务器 BankObject 保存的 per-profile 训练家摘要。
+## 1. 已闭环的核心结论
 
-## 2. 当前待验证的根因模型
+本次静态分析已经确认：**Trainer mismatch 的核心 gate 不是普通 Pokémon OT/TID 比较，也不是简单比较 BankObject 的 source-game trainer record，而是服务器 pending transaction 与本地/游戏 recovery record 的事务身份比较。**
 
-不预设单一根因，按证据优先级验证以下模型：
+关键函数：
 
-### H1：异常事务恢复中的游戏身份校验失败
+```text
+0x002B1CF8  BankSaveState_Update
+0x002A93F4  game recovery
+0x002A8760  local/game recovery + mismatch gate
+0x002A8D30  recovery metadata callback / error display data
+```
 
-网络故障发生在 stock save transaction 已推进一部分之后，服务器保留 pending/recovery context；下一次进入 state 11/17/18 时，客户端用当前 active game 的身份与上次事务上下文比较，比较失败后进入 Trainer mismatch 错误路径。
+state 18 `0x002A8760` 的核心条件已经从原版 Ghidra 导出闭环：
 
-### H2：source-game record 参与身份校验
+```text
+serverTx.dataId == recoveryRecord.dataId
+&&
+serverTx.curVersion == recoveryRecord.curVersion
+```
 
-fresh BankObject 的 `0xAD61C + profile*0x44` source record 含 Trainer ID/Name，可能在 full-download 后与 active game model 比较或同步。若前一次事务失败在 source record 与本地 game-side bookkeeping 的不同阶段，就可能造成同一份游戏存档被判定为不一致。
+若 Bank-local recovery record 不匹配，客户端会再检查当前联动游戏保存的 recovery record；若仍不匹配，就进入 case 8/9 的错误提示路径。
 
-### H3：游戏侧 Bank application/linkage bookkeeping 参与校验
+命中后，record 的：
 
-Gen6 公共存档研究表明 Bank 会维护独立的 application/linkage 数据；即使 Pokémon Box 未改变，Bank save 仍可能写 bookkeeping。需要从 Bank CIA 的 GameSaveAdapter writer/validator 反向确认 Gen6/Gen7 实际 runtime 路径，不能仅依赖 raw `main` 偏移推断。
+```text
+status == 1 -> RollbackBankObject
+status == 2 -> Complete/Commit BankObject
+```
 
-### H4：客户端 gate 只是表象，服务器也拒绝恢复
+决定恢复方向。
 
-即便本地绕过 Trainer mismatch branch，后续 RMC 仍可能因 transactionPassword/version/applicationId 不匹配而拒绝。实验必须区分：
+## 2. 游戏里真正保存的 recovery record
 
-- client-only gate；
-- client gate + server validation；
-- server transaction 本身仍可由 stock rollback/recovery 完成。
+原版 `BankSaveState_Update` 在服务器 Stage/Upload 成功后、最终 Complete 之前，先把当前 `BankTransactionParam` 写入游戏 save model：
 
-## 3. 研究原则
+```text
+GameRecoveryRecord
++0x00  dataId                u64
++0x08  transactionPassword   u64
++0x10  curVersion            u32
++0x14  updateVersion         u32
++0x18  size                  u32
++0x1C  status                u8
+```
 
-- 不永久 NOP 正常 Trainer/game identity 校验。
-- 不跳过 stock `Prepare/Complete/Rollback` 事务语义。
-- 不在尚未确认来源时硬编码 XY/ORAS/SM/USUM raw `main` 偏移。
-- 第一阶段先做静态函数提取、调用链和常量分析；第二阶段才做 recovery-only 实验 Hook。
-- 实验 Hook 必须只在已确认的异常恢复状态触发；正常 state 10/16/25 与正常保存保持 stock 行为。
-- 任一“绕过后可进入 UI”的结果都不能直接等同于“服务器事务已解锁”；必须观察后续 state 与 RMC 结果。
+family-specific runtime object：
 
-## 4. 目标产物
+```text
+Gen6   model + 0x1ADF8
+SM     model + 0xB1394
+USUM   model + 0xB4570
+```
 
-1. `state 8/11/17/18/22/23/7` 的完整反编译摘录、直接调用关系和候选 identity compare 函数表。
-2. `source-game record` 写入/读取/比较函数的地址与数据流。
-3. Trainer mismatch 最终错误分支/结果码/消息选择位置。
-4. 一个只用于研究的 recovery probe：记录关键状态，或在确认安全条件后只绕过 recovery mismatch gate。
-5. host tests、ARM 编译检查、text-cave/patch whitelist 验证。
-6. 实机实验矩阵：正常保存、Prepare 前断网、上传中断、game save 后/Complete 前断网、下次 recovery。
+保存正常准备提交时：
 
-## 5. 当前结论状态
+```text
+status = 2
+```
 
-截至本文件首次提交：
+随后原版真正保存游戏 `main`。
 
-- “Official Bulk Sync 自己直接写坏 game save”已经排除：当前实现只写 runtime BankObject。
-- “用户恢复旧 JKSM 存档导致 mismatch”与当前实机复现不符，排除为本次主因。
-- “网络失败恰好落在原版事务恢复窗口”与现象高度一致，但具体比较对象与 branch 地址仍需从 CIA 闭环。
-- `0xAD61C` source-game record 包含 Trainer ID 是新的高价值线索，优先追踪。
+所以：
+
+> “用户没有修改游戏 Pokémon、也没有 JKSM restore”并不等于“Bank 没有修改游戏 save”。
+
+Bank 为跨 Game ↔ Server 事务恢复而写入了独立 recovery bookkeeping。
+
+## 3. Bank 本地还有第二份 recovery record
+
+游戏保存成功后，stock Bank 再把同一个 transaction 写到自己的 persistent local record：
+
+```text
+LocalRecoveryRecord
++0x08  dataId                u64
++0x10  transactionPassword   u64
++0x18  curVersion            u32
++0x1C  updateVersion         u32
++0x20  size                  u32
++0x24  status                u8
+```
+
+保存方向：
+
+```text
+game save success -> status 2 -> Commit
+
+game save failure -> status 1 -> Rollback
+```
+
+因此原版实际上用两份本地证据帮助下一次启动恢复：
+
+```text
+Bank-local recovery record
++
+Game-save recovery record
+```
+
+## 4. 为什么网络失败后同一份 save 仍能 mismatch
+
+现在不再需要假设用户回档。
+
+一个完全符合原版代码的窗口是：
+
+```text
+Server Prepare/Stage 创建 pending transaction T1
+          ↓
+网络/请求异常
+          ↓
+Server 仍保留 T1
+          ↓
+Game recovery record 尚未成功持久化 T1
+并且/或者 Bank-local record 尚未成功持久化 T1
+          ↓
+下次启动 state 18
+          ↓
+server = T1
+local/game = T0 或空记录
+          ↓
+dataId / curVersion mismatch
+          ↓
+Trainer mismatch block
+```
+
+另一个需要实机故障注入区分的窗口，是 remote rollback/cleanup 与 local/game cleanup 的先后不同步。
+
+无论具体是哪一个网络窗口，**“same physical save”不能保证 transaction record 一致**，因为服务器和两个本地介质由不同异步步骤更新。
+
+## 5. 为什么错误信息会显示 Trainer ID
+
+state 18 在恢复过程中还会针对 server `dataId` 请求小型 metadata。
+
+`0x002A8D30` 对 `0x1E` 字节返回体解析出：
+
+```text
+26 bytes  名称类字段
+1 byte    属性/性别类字段
+u16       ID 类字段
+```
+
+随后 case 9 把这些信息格式化进错误 UI。
+
+所以“Trainer ID Error”是**错误提示语义**；它帮助用户识别上次会话关联的游戏，但不等于 blocking predicate 本身就是 Trainer ID。
+
+## 6. 对早期假设的修正
+
+### 6.1 `0xAD61C` source-game records
+
+BankObject 的 `8 × 0x44` source-game records 确实含 name/sex/trainer_id/stats，仍然是 BankObject 有意义的 metadata。
+
+但目前已找到的 state18 mismatch 核心 gate **没有用它直接决定 match/mismatch**。因此它从“首要根因候选”降级为辅助 metadata/后续研究项。
+
+### 6.2 Gen6 公共 0x20 Bank application data
+
+早期把它抽象成 counter/link block 是有启发性的，但 Bank CIA 已经提供了更准确的 runtime 事务记录结构：`dataId + transactionPassword + curVersion + updateVersion + size + status`。
+
+后续文档以 CIA 静态代码确认的结构为主，不再把未知 counter 语义当作根因结论。
+
+### 6.3 `0x002AD7BC`
+
+自动函数提取器确认它不是独立函数头，而位于 `FUN_002AD724` 内部。旧文档把它直接标成一个独立“state23 forced rollback/recovery update function”过于粗糙；新地址图将“状态入口地址”和“真实函数首地址”分开记录。
+
+## 7. Official Bulk Sync 的责任边界
+
+当前 V3：
+
+```text
+只修改 runtime BankObject
+不直接写 game main
+不 Hook Prepare/Complete/Rollback
+不接管 transactionPassword/version
+```
+
+因此 Bulk Sync 并没有实现错误的 Trainer compare。
+
+它和问题的关系是：
+
+```text
+bulk_import.bin 改变 BankObject
+ -> 用户触发一次 stock save transaction
+ -> 正常网络：保存成功
+ -> 网络在 recovery-record / server-transaction 窄窗口失败：暴露 stock mismatch gate
+```
+
+这正好解释“通常成功、偶发网络失败后被锁”的实机表现。
+
+## 8. 为什么不能直接 NOP mismatch
+
+state 18 在 match 后会拿 recovery record 中的：
+
+```text
+transactionPassword
+dataId
+curVersion
+updateVersion
+size
+status
+```
+
+继续调用 stock Commit 或 Rollback。
+
+如果把 dataId/curVersion compare 无条件改成成功，却继续使用一份旧/不匹配 record 的 password/version，会把客户端送入错误 transaction context。
+
+因此研究分支遵循：
+
+- 不永久 `TrainerCheck = true`；
+- 不默认伪造 transactionPassword；
+- 不绕开 stock Complete/Rollback；
+- 第一版实验必须 recovery-only；
+- mismatch 场景如果能证明属于本工具 bulk-only session，**优先研究受控 Rollback，而不是盲目 Commit**。
+
+## 9. 已加入的开发设施
+
+### 静态提取器
+
+```text
+bank/tools/extract_recovery_chain.py
+bank/tools/test_extract_recovery_chain.py
+bank/tools/recovery_targets.txt
+```
+
+支持：
+
+- 精确函数地址；
+- 函数内部地址自动解析到 containing function；
+- 直接 callee 列表；
+- CI 生成完整 recovery-chain artifact。
+
+### stock recovery decision model
+
+```text
+bank/src/official_recovery_probe.h
+bank/src/official_recovery_probe_core.c
+bank/src/official_recovery_probe_host_test.c
+```
+
+把 `state18` 已确认的行为固定为 host-testable model：
+
+```text
+LOCAL match + status 1 -> ROLLBACK
+LOCAL match + status 2 -> COMMIT
+LOCAL 无有效方向       -> fallback GAME
+GAME match + status 1  -> ROLLBACK
+GAME match + status 2  -> COMMIT
+否则                   -> BLOCK
+```
+
+这个模块目前不改变实机 patch，只作为后续实验 Hook 的事实合同。
+
+## 10. 下一步
+
+1. 对 stock `.code` 做机器码级反汇编，定位 state18 case4 的精确 `CMP/BNE` 地址；
+2. 设计一个**独立实验 build**，不污染 normal V3；
+3. 优先做 diagnostic/probe，验证绕过 local gate 后 server 是否允许 stock recovery；
+4. 为 Bulk Apply 增加可验证的 session marker，使“bulk-only pending transaction”能够与普通手动 Game ↔ Bank 操作区分；
+5. 只有在能证明 transaction 属于 bulk-only session 时，才研究 mismatch 时的受控 forced rollback；
+6. 做真实设备网络故障矩阵，记录 server pStatus/dataId/curVersion 与 local/game record 的组合。
