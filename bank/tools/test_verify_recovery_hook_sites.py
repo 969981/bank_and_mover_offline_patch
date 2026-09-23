@@ -1,6 +1,12 @@
 import unittest
 
-from verify_recovery_hook_sites import EXPECTED_SIZE, IMAGE_BASE, sites_for, verify_blob
+from verify_recovery_hook_sites import (
+    EXPECTED_SIZE,
+    IMAGE_BASE,
+    RECOVERY_SESSION_FLAG,
+    sites_for,
+    verify_blob,
+)
 
 
 class HookSiteTests(unittest.TestCase):
@@ -34,6 +40,12 @@ class HookSiteTests(unittest.TestCase):
         blob[0x002A8A64 - IMAGE_BASE] ^= 1
         errors = verify_blob(bytes(blob), "B", check_hash=False)
         self.assertTrue(any("state18_game_mismatch_decision_block" in error for error in errors))
+
+    def test_nonzero_recovery_scratch_fails(self):
+        blob = bytearray(self.fixture("B"))
+        blob[RECOVERY_SESSION_FLAG - IMAGE_BASE] = 1
+        errors = verify_blob(bytes(blob), "B", check_hash=False)
+        self.assertTrue(any("recovery_session_scratch" in error for error in errors))
 
     def test_a_does_not_require_b_only_sites(self):
         self.assertEqual(verify_blob(self.fixture("A"), "A", check_hash=False), [])
