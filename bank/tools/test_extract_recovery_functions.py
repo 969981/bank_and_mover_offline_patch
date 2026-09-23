@@ -61,6 +61,18 @@ class ExtractRecoveryFunctionsTests(unittest.TestCase):
         self.assertTrue(body.startswith("/* #101 @ 002af034"))
         self.assertNotIn("/* #102 @ 002b0000", body)
 
+    def test_resolve_function_address_accepts_interior_symbol_address(self) -> None:
+        index = erf.index_functions(SAMPLE)
+        self.assertEqual(erf.resolve_function_address(index, "002af038"), "002af034")
+        self.assertEqual(erf.resolve_function_address(index, "FUN_002af034"), "002af034")
+
+    def test_build_report_discloses_requested_and_resolved_addresses(self) -> None:
+        report, missing = erf.build_report(SAMPLE, ["002af038"], ["FUN_001d5c28"], 1)
+        self.assertEqual(missing, [])
+        self.assertIn("requested=0x002AF038", report)
+        self.assertIn("resolved_start=0x002AF034", report)
+        self.assertIn("FUN_002af034", report)
+
     def test_reference_context_reports_matching_lines_with_context(self) -> None:
         matches = erf.find_reference_context(SAMPLE, ["0x34", "FUN_001d5c28"], context_lines=1)
         joined = "\n".join(matches)
@@ -69,7 +81,7 @@ class ExtractRecoveryFunctionsTests(unittest.TestCase):
 
     def test_extract_missing_address_raises_key_error(self) -> None:
         with self.assertRaises(KeyError):
-            erf.extract_function(SAMPLE, "002a9999")
+            erf.extract_function(SAMPLE, "00100000")
 
     def test_cli_missing_address_returns_nonzero(self) -> None:
         script = HERE / "extract_recovery_functions.py"
@@ -77,14 +89,14 @@ class ExtractRecoveryFunctionsTests(unittest.TestCase):
             source = Path(td) / "sample.c"
             source.write_text(SAMPLE, encoding="utf-8")
             result = subprocess.run(
-                [sys.executable, str(script), str(source), "--address", "002a9999"],
+                [sys.executable, str(script), str(source), "--address", "00100000"],
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=False,
             )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("002a9999", result.stderr.lower())
+        self.assertIn("00100000", result.stderr.lower())
 
 
 if __name__ == "__main__":
