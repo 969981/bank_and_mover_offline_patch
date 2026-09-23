@@ -36,12 +36,14 @@ typedef u8 (*SourceSoftwareGetter)(void *);
 static const char emptyPath[1]={0};
 static const char bulkPath[]="/3ds/Bank/bulk_import.bin";
 
-/* Exact unsigned n % 60 without an EABI division helper. */
+/* Exact unsigned n % 60 using only Thumb-1-friendly 32-bit operations.
+ * Since 256 == 16 (mod 60) and every higher byte has the same coefficient,
+ * n % 60 == (b0 + 16*(b1+b2+b3)) % 60. */
 static unsigned mod60u32(u32 value)
 {
-    u64 product=(u64)value*0x88888889ull;
-    u32 quotient=(u32)(product>>37);
-    return value-quotient*60u;
+    u32 reduced=(value&0xFFu)+16u*(((value>>8)&0xFFu)+((value>>16)&0xFFu)+(value>>24));
+    while (reduced>=60u) reduced-=60u;
+    return reduced;
 }
 
 static unsigned takeTens(unsigned *value)
