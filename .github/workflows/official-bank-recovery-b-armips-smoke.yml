@@ -7,40 +7,46 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-production-objects:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile production ARM objects
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi
+          mkdir -p bank/build
+          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync_prod.c -o bank/build/official_bulk_sync_prod.o
+          arm-none-eabi-as -mcpu=mpcore bank/src/official_recovery_wal_thumb.s -o bank/build/official_recovery_wal_thumb.o
+          arm-none-eabi-size bank/build/official_bulk_sync_prod.o bank/build/official_recovery_wal_thumb.o
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovery-b-production-objects
+          path: |
+            bank/build/official_bulk_sync_prod.o
+            bank/build/official_recovery_wal_thumb.o
+          if-no-files-found: error
+
   armips-smoke:
+    needs: build-production-objects
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: recovery-b-production-objects
+          path: bank/build
 
       - name: Prepare synthetic verified-layout baseline
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force bank/rom/exefs | Out-Null
-          New-Item -ItemType Directory -Force bank/build | Out-Null
           $path = 'bank/rom/exefs/00040000000C9B00.dec.code'
           $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::Create)
           try { $fs.SetLength(0x2AC000) } finally { $fs.Dispose() }
 
-      - name: Build real smart WAL and tiny bulk import stub
-        shell: pwsh
-        run: |
-          @'
-          .syntax unified
-          .cpu mpcore
-          .thumb
-          .text
-          .thumb_func
-          .global OfficialBulkSync_Process
-          OfficialBulkSync_Process:
-              bx lr
-          '@ | Set-Content -Encoding ascii bank/build/bulk_stub.s
-
-          clang --target=arm-none-eabi -mcpu=mpcore -mthumb -c bank/build/bulk_stub.s -o bank/build/official_bulk_sync_prod.o
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          clang --target=arm-none-eabi -mcpu=mpcore -mthumb -c bank/src/official_recovery_wal_thumb.s -o bank/build/official_recovery_wal_thumb.o
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - name: Assemble main_official.s with armips
+      - name: Assemble production main_official.s with armips
         shell: pwsh
         working-directory: bank/src
         run: |
@@ -50,7 +56,7 @@ jobs:
           if (-not (Test-Path $patched)) { throw 'armips did not create patched image' }
           if ((Get-Item $patched).Length -ne 0x2AC000) { throw 'patched image size changed' }
 
-      - name: Verify real linked symbols and smart production hook writes
+      - name: Verify linked symbols and smart production hooks
         shell: pwsh
         run: |
           $text = Get-Content bank/build/official-armips-symbols-smoke.txt -Raw
@@ -77,6 +83,13 @@ jobs:
             0x002A8A64
           )) {
             $off = $va - 0x00100000
-            $word = [BitConverter]::ToUInt32($bytes,$off)
-            if ($word -eq 0) { throw ('hook site remained zero at 0x{0:X8}' -f $va) }
+            if ([BitConverter]::ToUInt32($bytes,$off) -eq 0) { throw ('hook site remained zero at 0x{0:X8}' -f $va) }
           }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovery-b-linked-template
+          path: |
+            bank/build/00040000000C9B00.dec.code
+            bank/build/official-armips-symbols-smoke.txt
+          if-no-files-found: error
