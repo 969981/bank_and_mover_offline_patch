@@ -15,6 +15,32 @@
 .org BankDataSyncState_Update
     b OfficialBulk_BankDataSyncDispatch
 
+// Recovery A deliberately changes only the stock paths that would otherwise
+// enter state18 substate 8 (Trainer/save mismatch / invalid recovery status).
+// Both funnels are redirected into the now-unreachable stock case8 body, which
+// becomes a tiny rollback shim. This consumes no additional RX-tail space.
+.org BankRecovery_InvalidStatusFunnel
+    b OfficialRecovery_A_RollbackShim
+
+.org BankRecovery_MismatchFunnel
+    b OfficialRecovery_A_RollbackShim
+
+// Stock case8 is reachable only from the two substate-8 funnels above in this
+// state machine. Variant A replaces its first 0x20 bytes with a raw transaction
+// copy and then rejoins stock substate 6 (RollbackBankObject).
+.org BankRecovery_ErrorCase8
+.area 0x20
+OfficialRecovery_A_RollbackShim:
+    ldr r0,[r4,#0x28]              // CURRENT server BankTransactionParam*
+    add r1,r4,#0x40                // state-owned recovery transaction buffer
+    ldmia r0!,{r2,r3,r5-r7,r12}    // first 6 words
+    stmia r1!,{r2,r3,r5-r7,r12}
+    ldmia r0!,{r2,r3}              // last 2 words
+    stmia r1!,{r2,r3}
+    mov r0,#6                       // stock state18 case6 = Rollback
+    b BankRecovery_SetSubstate
+.endarea
+
 .org OfficialBulk_CodeStart
 .area OfficialBulk_CodeEnd-OfficialBulk_CodeStart
 .arm
