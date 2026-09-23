@@ -15,6 +15,9 @@ on:
       - bank/src/official_recovery_probe.h
       - bank/src/official_recovery_probe_core.c
       - bank/src/official_recovery_probe_host_test.c
+      - bank/src/official_recovery_marker.h
+      - bank/src/official_recovery_marker_core.c
+      - bank/src/official_recovery_marker_host_test.c
       - bank/src/official_bulk_sync.c
       - bank/src/official_bulk_sync_core.c
       - bank/src/official_bulk_sync.h
@@ -89,6 +92,14 @@ jobs:
             bank/src/official_recovery_probe_core.c \
             -o /tmp/official_recovery_probe_host_test
           /tmp/official_recovery_probe_host_test
+
+      - name: Run bulk recovery marker contract tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_marker_host_test.c \
+            bank/src/official_recovery_marker_core.c \
+            -o /tmp/official_recovery_marker_host_test
+          /tmp/official_recovery_marker_host_test
 
       - name: Install ARM compiler
         run: |
