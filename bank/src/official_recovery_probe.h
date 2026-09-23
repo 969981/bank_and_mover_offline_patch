@@ -33,4 +33,13 @@ OfficialRecoveryDecision OfficialRecovery_Classify(unsigned long long serverData
     unsigned serverCurVersion,const OfficialRecoveryRecord *localRecord,
     const OfficialRecoveryRecord *gameRecord);
 
+/*
+ * Build the exact transaction context state17 needs, but deliberately mark it
+ * as rollback (status=1).  This helper is pure: it does not write game save or
+ * call a remote method.  Runtime code must gate it to an explicitly approved
+ * recovery context before persisting the resulting record.
+ */
+int OfficialRecovery_BuildRollbackRecord(const OfficialRecoveryRecord *server,
+    OfficialRecoveryRecord *gameOut);
+
 #endif
