@@ -12,6 +12,26 @@
 002A86FC
 002A8D30
 
+# Remote Bank update composite: wrapper, constructor/setter, callbacks
+002A2194  # remote wrapper constructor
+002A2504  # BankRemote_StageFileUpdate composite entry
+002A3D54  # wrapper+0x10 protocol-client setter
+002A2428  # composite completion callback candidate
+002A290C  # composite callback candidate
+002A2A14  # composite callback candidate
+002A2BF0  # composite callback candidate
+002A2CB4  # composite callback candidate
+002A2D70  # composite callback candidate
+002A3080  # composite callback candidate
+002A3268  # composite callback candidate
+002A3324  # composite callback candidate
+002A3424  # composite callback candidate
+002A3954  # composite callback candidate
+
+# Stock Commit / Rollback wrappers on the same injected protocol client
+001D5D74
+001D5C28
+
 # Local persistent transaction-record accessors used by save/recovery
 001D4D84
 001D4D78
