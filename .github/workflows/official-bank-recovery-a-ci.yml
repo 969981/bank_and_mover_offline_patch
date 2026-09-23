@@ -64,14 +64,14 @@ jobs:
           arm-none-eabi-gcc $BASEFLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/prod-default.o
           echo '=== production Thumb object ==='
           arm-none-eabi-size /tmp/prod-default.o
-          test "$(arm-none-eabi-size /tmp/prod-default.o | awk 'NR==2 {print $1}')" -eq 1577
+          test "$(arm-none-eabi-size /tmp/prod-default.o | awk 'NR==2 {print $1}')" -eq 1605
 
           arm-none-eabi-as -mcpu=mpcore bank/src/official_recovery_wal_thumb.s -o /tmp/recovery-wal-a.o
           arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-wal-a.o /tmp/recovery-wal-a.bin
           echo '=== Recovery A WAL Thumb ==='
           arm-none-eabi-objdump -d /tmp/recovery-wal-a.o
-          test "$(stat -c %s /tmp/recovery-wal-a.bin)" -eq 136
+          test "$(stat -c %s /tmp/recovery-wal-a.bin)" -eq 134
 
           # RX tail = 0x6F0 = 1776 bytes. Existing ARM dispatcher is 36 bytes.
-          # 1577 + 36 + 136 = 1749, leaving 27 bytes before TextMappedEnd.
-          test $((1577 + 36 + 136)) -le 1776
+          # 1605 + 36 + 134 = 1775, leaving 1 byte before TextMappedEnd.
+          test $((1605 + 36 + 134)) -le 1776
