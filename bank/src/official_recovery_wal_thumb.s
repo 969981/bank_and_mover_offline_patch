@@ -4,22 +4,20 @@
 .text
 .align 2
 
-// Recovery B production WAL. Only a session in which Official Bulk Sync
-// actually applied data may create the private status=3 write-ahead record.
-// The WAL is persisted through the stock Bank-local save path before RMC52.
+// Recovery B production WAL.
+//
+// Persist a private status=3 Bank-local recovery record before RMC52 for every
+// stock Bank save. This is safe for ordinary transfers as well as Bulk Sync:
+// before game-save success it is a Rollback fallback; after game-save success
+// the stock game status=2 record can authorize Commit; stock case5 then replaces
+// the local WAL with its normal status=2 record.
 
-.equ RecoverySessionFlag, 0x003ABFFC
 .equ BankSaveSetSubstate, 0x002B2174
 .equ State18StoreSubstate, 0x002A8980
 
 .thumb_func
 .global OfficialRecovery_WalCase1
 OfficialRecovery_WalCase1:
-    ldr r3,=RecoverySessionFlag
-    ldrb r1,[r3]
-    cmp r1,#1
-    bne 2f
-
     movs r2,#0x48
     ldrb r1,[r4,r2]
     cmp r1,#8
@@ -32,13 +30,10 @@ OfficialRecovery_WalCase1:
     bx r3
 
 1:
-    // Durable status=3 WAL exists. Disarm before the untouched stock BL at
-    // 0x002B1DE8 starts the real SerializeAndStage call.
+    // Durable status=3 WAL exists; allow the untouched stock BL at 0x002B1DE8
+    // to start the actual SerializeAndStage call.
     movs r1,#0
     strb r1,[r4,r2]
-    ldr r3,=RecoverySessionFlag
-    strb r1,[r3]
-2:
     mov r0,r4
     bx lr
 
@@ -63,6 +58,9 @@ OfficialRecovery_WalCase8Result:
     ldrb r1,[r4,r2]
     cmp r1,#7
     bne 3f
+
+    // Private pre-Stage WAL save. Do not let stock MOVEQ at 0x002B2094 route
+    // journal success to state11; return to case1 instead.
     cmp r3,#1
     bne 2f
     movs r1,#8
@@ -77,6 +75,7 @@ OfficialRecovery_WalCase8Result:
     ldr r3,=BankSaveSetSubstate
     bx r3
 3:
+    // Ordinary case8: restore flags expected by the untouched MOVEQ/BEQ.
     cmp r3,#1
     bx lr
 
@@ -87,7 +86,7 @@ OfficialRecovery_WalLocalStatusB:
     bne 4f
 
     // dataId + curVersion already matched in stock state18. Complete ownership
-    // validation with updateVersion, size and transactionPassword.
+    // validation with updateVersion, size and 64-bit transactionPassword.
     ldr r1,[r4,#0x28]
     ldr r2,[r4,#0x4c]
     ldr r3,[r1,#0x0c]
@@ -106,19 +105,19 @@ OfficialRecovery_WalLocalStatusB:
     orrs r2,r3
     bne 3f
 
-    // Exact WAL: remember a trusted rollback fallback exists, then let stock
-    // state4 inspect the game recovery record for possible Commit evidence.
+    // Exact WAL: remember trusted Rollback fallback exists, then ask stock
+    // state4 to inspect the game recovery record for Commit evidence.
     movs r2,#0x88
     movs r0,#2
     strb r0,[r4,r2]
     movs r0,#4
     b 7f
 3:
-    // Stale/foreign private WAL cannot authorize a remote operation.
+    // Stale/foreign private WAL cannot authorize any remote operation.
     movs r0,#4
     b 7f
 4:
-    // Preserve stock status 1/2 meanings for ordinary records.
+    // Preserve stock status 1/2 semantics for ordinary recovery records.
     cmp r0,#1
     beq 5f
     cmp r0,#2
@@ -133,16 +132,3 @@ OfficialRecovery_WalLocalStatusB:
 7:
     ldr r3,=State18StoreSubstate
     bx r3
-
-.thumb_func
-.global OfficialRecovery_WalGameFallbackB
-OfficialRecovery_WalGameFallbackB:
-    movs r2,#0x88
-    ldrb r0,[r4,r2]
-    cmp r0,#2
-    bne 1f
-    movs r0,#6
-    bx lr
-1:
-    movs r0,#8
-    bx lr
