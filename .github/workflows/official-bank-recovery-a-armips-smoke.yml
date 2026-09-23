@@ -63,6 +63,7 @@ jobs:
           foreach ($name in @(
             'OfficialBulk_BankDataSyncDispatch',
             'OfficialRecovery_WalCase1',
+            'OfficialRecovery_WalCase5Status',
             'OfficialRecovery_WalCase8Result',
             'OfficialBulkSync_Process'
           )) {
@@ -73,7 +74,7 @@ jobs:
           }
 
           $bytes = [System.IO.File]::ReadAllBytes('bank/build/00040000000C9B00.dec.code')
-          foreach ($va in @(0x002AF460,0x002B1DE4,0x002B2090)) {
+          foreach ($va in @(0x002AF460,0x002B1DE4,0x002B1F50,0x002B2090)) {
             $off = $va - 0x00100000
             if ([BitConverter]::ToUInt32($bytes,$off) -eq 0) { throw ('hook site remained zero at 0x{0:X8}' -f $va) }
           }
