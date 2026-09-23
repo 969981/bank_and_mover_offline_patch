@@ -9,6 +9,9 @@ on:
       - bank/tools/test_extract_recovery_chain.py
       - bank/tools/recovery_targets.txt
       - bank/docs/code.bin_all_functions.c
+      - bank/src/official_recovery_probe.h
+      - bank/src/official_recovery_probe_core.c
+      - bank/src/official_recovery_probe_host_test.c
       - bank/src/official_bulk_sync.c
       - bank/src/official_bulk_sync_core.c
       - bank/src/official_bulk_sync.h
@@ -49,6 +52,14 @@ jobs:
           name: official-bank-recovery-chain
           path: /tmp/official-bank-recovery-chain.txt
           if-no-files-found: error
+
+      - name: Run stock recovery decision model tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_probe_host_test.c \
+            bank/src/official_recovery_probe_core.c \
+            -o /tmp/official_recovery_probe_host_test
+          /tmp/official_recovery_probe_host_test
 
       - name: Install ARM compiler
         run: |
