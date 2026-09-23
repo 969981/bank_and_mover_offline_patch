@@ -12,25 +12,27 @@ EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40
 
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
-    "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
-    "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
-    # Bind OBRX to the exact BankTransactionParam before stock submits RMC52.
-    # r3 is state+0x28 (BankTransactionParam*) at this call seam.
-    "save_stage_tx_bind_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
-    "save_complete_callback_success": (0x002B20CC, bytes.fromhex("0d 10 a0 e3")),
-    "save_rollback_callback_success": (0x002B210C, bytes.fromhex("10 10 a0 e3")),
+    "save_stage_tx_load": (0x002B2494, bytes.fromhex("28 30 94 e5")),
+    "save_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
 
 AUTO = {
-    "save_game_recovery_write_begin": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
+    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    "save_case7_status1_entry": (0x002B1FF8, bytes.fromhex("08 00 94 e5")),
+    "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
 }
 
 SMART = {
-    "save_game_recovery_write_begin": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
+    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    "save_case7_status1_entry": (0x002B1FF8, bytes.fromhex("08 00 94 e5")),
+    "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
+    "state18_local_dataid_mismatch_bne": (0x002A8904, bytes.fromhex("1c 00 00 1a")),
+    "state18_local_curversion_mismatch_bne": (0x002A891C, bytes.fromhex("16 00 00 1a")),
+    "state18_local_status_decision": (0x002A8968, bytes.fromhex("01 00 50 e3")),
+    "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
+    "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
     "save_game_started": (0x002B1F1C, bytes.fromhex("04 00 a0 e3")),
     "save_game_result_dispatch": (0x002B1F48, bytes.fromhex("89 00 00 ea")),
-    "save_remote_complete_start": (0x002B20A0, bytes.fromhex("40 00 94 e5")),
-    "save_remote_complete_call": (0x002B20AC, bytes.fromhex("30 8f fc eb")),
 }
 
 
