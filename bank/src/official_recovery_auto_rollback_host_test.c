@@ -15,36 +15,23 @@ static OfficialRecoveryRecord tx(void)
 int main(void)
 {
     OfficialRecoveryRecord server=tx();
-    unsigned char marker[OFFICIAL_RECOVERY_MARKER_SIZE]={0};
 
-    assert(OfficialRecoveryMarker_EncodePending(marker,7u));
-    assert(OfficialRecoveryMarker_BindTransaction(marker,&server,7u));
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,7u,marker,0,0)==
+    /* Stock has a valid recovery record: never interfere. */
+    assert(OfficialRecoveryAutoRollback_Decide(1,&server,1,0)==
+        OFFICIAL_RECOVERY_AUTO_STOCK);
+    assert(OfficialRecoveryAutoRollback_Decide(1,&server,0,1)==
+        OFFICIAL_RECOVERY_AUTO_STOCK);
+
+    /* No pending server transaction: there is nothing to roll back. */
+    assert(OfficialRecoveryAutoRollback_Decide(0,0,0,0)==
+        OFFICIAL_RECOVERY_AUTO_STOCK);
+
+    /* The defining Variant-A behavior: unresolved pending mismatch -> rollback. */
+    assert(OfficialRecoveryAutoRollback_Decide(1,&server,0,0)==
         OFFICIAL_RECOVERY_AUTO_ROLLBACK);
 
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,7u,marker,1,0)==
-        OFFICIAL_RECOVERY_AUTO_STOCK);
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,7u,marker,0,1)==
-        OFFICIAL_RECOVERY_AUTO_STOCK);
-
-    assert(OfficialRecoveryAutoRollback_Decide(0,0,7u,marker,0,0)==
-        OFFICIAL_RECOVERY_AUTO_LOCAL_CLEANUP);
-
-    assert(OfficialRecoveryMarker_EncodePending(marker,7u));
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,7u,marker,0,0)==
-        OFFICIAL_RECOVERY_AUTO_BLOCK);
-
-    assert(OfficialRecoveryMarker_BindTransaction(marker,&server,7u));
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,6u,marker,0,0)==
-        OFFICIAL_RECOVERY_AUTO_BLOCK);
-
-    server.curVersion++;
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,7u,marker,0,0)==
-        OFFICIAL_RECOVERY_AUTO_BLOCK);
-    server.curVersion--;
-
-    marker[20]^=1u;
-    assert(OfficialRecoveryAutoRollback_Decide(1,&server,7u,marker,0,0)==
+    /* Fail closed if a caller claims pending without a usable server tx. */
+    assert(OfficialRecoveryAutoRollback_Decide(1,0,0,0)==
         OFFICIAL_RECOVERY_AUTO_BLOCK);
     return 0;
 }
