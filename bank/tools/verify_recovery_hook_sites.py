@@ -9,24 +9,31 @@ from pathlib import Path
 IMAGE_BASE = 0x00100000
 EXPECTED_SIZE = 0x2AC000
 EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
+
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
-    "state18_mismatch_funnel": (0x002A8AD0, bytes.fromhex("08 00 a0 e3")),
+    # Hook the two real game-recovery mismatch edges, not the shared state=8 funnel.
+    "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
+    "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
+    # Safe marker cleanup points after stock remote success callbacks.
+    "save_complete_callback_success": (0x002B20CC, bytes.fromhex("0d 10 a0 e3")),
+    "save_rollback_callback_success": (0x002B210C, bytes.fromhex("10 10 a0 e3")),
 }
+
 AUTO = {
-    "state18_invalid_status_funnel": (0x002A8A74, bytes.fromhex("08 00 a0 e3")),
-    "state18_error_case8_head": (
-        0x002A8B4C,
-        bytes.fromhex(
-            "04 00 94 e5 67 32 fe eb 00 10 a0 e3 00 f0 20 e3 "
-            "30 32 fe eb 00 50 a0 e1 00 20 a0 e3 01 1c a0 e3"
-        ),
-    ),
+    # Earliest currently proven point where state+0x28 contains the exact tx and
+    # stock has not yet written GameRecoveryRecord.
+    "save_case3_tx_bound": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
+    "serialize_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
+
 SMART = {
-    "save_case3_tx_bind": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
-    "save_case5_game_save_ok": (0x002B1F4C, bytes.fromhex("08 00 94 e5")),
-    "save_case9_complete_start": (0x002B20A0, bytes.fromhex("40 00 94 e5")),
+    "save_case3_tx_bound": (0x002B1E18, bytes.fromhex("08 00 94 e5")),
+    "save_game_started": (0x002B1F1C, bytes.fromhex("04 00 a0 e3")),
+    "save_game_result_dispatch": (0x002B1F48, bytes.fromhex("89 00 00 ea")),
+    "save_remote_complete_start": (0x002B20A0, bytes.fromhex("40 00 94 e5")),
+    "save_remote_complete_call": (0x002B20AC, bytes.fromhex("30 8f fc eb")),
+    "serialize_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
 
 
@@ -34,10 +41,7 @@ def sites_for(variant: str):
     if variant not in {"A", "B"}:
         raise ValueError("variant must be A or B")
     sites = dict(COMMON)
-    if variant == "A":
-        sites.update(AUTO)
-    else:
-        sites.update(SMART)
+    sites.update(AUTO if variant == "A" else SMART)
     return sites
 
 
@@ -52,9 +56,7 @@ def verify_blob(blob: bytes, variant: str, check_hash: bool = True):
             off = va - IMAGE_BASE
             got = blob[off:off + len(wanted)]
             if got != wanted:
-                errors.append(
-                    f"{name} 0x{va:08X}: got {got.hex()} want {wanted.hex()}"
-                )
+                errors.append(f"{name} 0x{va:08X}: got {got.hex()} want {wanted.hex()}")
     return errors
 
 
@@ -73,10 +75,7 @@ def main(argv=None):
         for error in errors:
             print(f"error: {error}", file=sys.stderr)
         return 2
-    print(
-        f"OK variant={args.variant} size=0x{len(blob):X} "
-        f"sha256={hashlib.sha256(blob).hexdigest()}"
-    )
+    print(f"OK variant={args.variant} size=0x{len(blob):X} sha256={hashlib.sha256(blob).hexdigest()}")
     for name, (va, wanted) in sites_for(args.variant).items():
         print(f"{name}=0x{va:08X} bytes={wanted.hex(' ')}")
     return 0
