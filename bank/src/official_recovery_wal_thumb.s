@@ -4,13 +4,12 @@
 .text
 .align 2
 
-// Recovery A production WAL.  Only a session in which Official Bulk Sync
+// Recovery A production WAL. Only a session in which Official Bulk Sync
 // actually applied data may create the private status=3 write-ahead record.
 // The exact transaction is persisted through the stock Bank-local save path
 // before RMC52 can create the server-side pending transaction.
 
 .equ RecoverySessionFlag, 0x003ABFFC
-.equ BankSaveSerializeAndStage, 0x002B2320
 .equ BankSaveSetSubstate, 0x002B2174
 .equ State18StoreSubstate, 0x002A8980
 
@@ -34,16 +33,15 @@ OfficialRecovery_WalCase1:
     bx r3
 
 1:
-    // Durable status=3 WAL exists.  Disarm before the real Stage call; later
-    // stock case7 failures must keep their native status=1 semantics.
+    // Durable status=3 WAL exists. Disarm before the untouched stock BL at
+    // 0x002B1DE8 starts the real SerializeAndStage call.
     movs r1,#0
     strb r1,[r4,r2]
     ldr r3,=RecoverySessionFlag
     strb r1,[r3]
 2:
     mov r0,r4
-    ldr r3,=BankSaveSerializeAndStage
-    bx r3
+    bx lr
 
 .thumb_func
 .global OfficialRecovery_WalSelectStatus
@@ -65,19 +63,21 @@ OfficialRecovery_WalCase8Result:
     movs r2,#0x48
     ldrb r1,[r4,r2]
     cmp r1,#7
-    bne 1f
+    bne 3f
     cmp r3,#1
     bne 2f
     movs r1,#8
     strb r1,[r4,r2]
     movs r0,#1
-    b 2f
-1:
-    cmp r3,#1
-    bne 2f
-    movs r0,#11
+    ldr r3,=BankSaveSetSubstate
+    bx r3
 2:
-    // Restore the flags expected by the stock BEQ at 0x002B2098.
+    movs r1,#0
+    strb r1,[r4,r2]
+    movs r0,#20
+    ldr r3,=BankSaveSetSubstate
+    bx r3
+3:
     cmp r3,#1
     bx lr
 
@@ -87,7 +87,7 @@ OfficialRecovery_WalLocalStatusA:
     cmp r0,#3
     bne 9f
 
-    // dataId + curVersion already matched in stock state18.  Complete ownership
+    // dataId + curVersion already matched in stock state18. Complete ownership
     // validation with updateVersion, size and the 64-bit transactionPassword.
     ldr r1,[r4,#0x28]
     ldr r2,[r4,#0x4c]
