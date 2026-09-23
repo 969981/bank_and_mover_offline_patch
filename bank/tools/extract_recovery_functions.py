@@ -24,23 +24,64 @@ FUNCTION_MARKER_RE = re.compile(
 )
 
 DEFAULT_ADDRESSES = (
-    "002acbdc",  # state 8
-    "002adc50",  # state 10
-    "002af034",  # state 11
-    "002a93f4",  # state 17
-    "002a8760",  # state 18
-    "002a9118",  # state 22
-    "002ad7bc",  # state 23
-    "002b1cf8",  # state 7
+    # Outer state factory/selector and recovery states.
+    "002a5580",  # choose next outer state
+    "002a5a7c",  # state object factory
+    "002acbdc",  # state 8 - initial remote/transaction query
+    "002adc50",  # state 10 - game selection
+    "002af034",  # state 11 - post-selection decision
+    "002a93f4",  # state 17 - game-record recovery/retry
+    "002a9700",  # state 17 initializer
+    "002a8760",  # state 18 - current-user reconciliation
+    "002a9118",  # state 22 - save-error UI
+    "002ad7bc",  # historically labeled state 23; verify containing function
+    "002b1cf8",  # state 7 - normal save transaction
+    # Remote transaction helpers/callbacks.
+    "002a26ac",  # query metadata
+    "002a27c8",  # query recovery token
+    "002a3144",  # query transaction
+    "002d0edc",  # query transaction success callback
+    "001d5d74",  # commit staged update
+    "001d5c28",  # rollback staged update
+    # Server/recovery object getters used by state 18.
+    "002cb8a8",
+    "002cb8c4",
+    "002cb8d0",
+    "002cb8dc",
+    "002cb8e8",
+    "002cb908",
+    # Runtime/root transaction setters used by state 7.
+    "001d4d48",
+    "001d4d54",
+    "001d4d60",
+    "001d4d6c",
+    "001d4d78",
+    "001d4d84",
+    # Active-game/profile and local save helpers.
+    "00233a6c",
+    "0023234c",
+    "00232338",
+    "002b4a20",
+    "002b4ab4",
 )
 
 DEFAULT_REFERENCES = (
-    "0xad61c",
-    "0xad624",
-    "0x34",
-    "0x35",
+    "FUN_002cb8a8",
+    "FUN_002cb8c4",
+    "FUN_002cb8d0",
+    "FUN_002cb8dc",
+    "FUN_002cb8e8",
+    "FUN_002cb908",
+    "FUN_001d4d48",
+    "FUN_001d4d54",
+    "FUN_001d4d60",
+    "FUN_001d4d6c",
+    "FUN_001d4d78",
+    "FUN_001d4d84",
     "FUN_001d5d74",
     "FUN_001d5c28",
+    "FUN_002a3144",
+    "FUN_002d0edc",
 )
 
 
