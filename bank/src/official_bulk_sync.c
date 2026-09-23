@@ -36,27 +36,18 @@ typedef u8 (*SourceSoftwareGetter)(void *);
 static const char emptyPath[1]={0};
 static const char bulkPath[]="/3ds/Bank/bulk_import.bin";
 
+/* Exact unsigned n % 60 without an EABI division helper. */
 static unsigned mod60u32(u32 value)
 {
-    unsigned remainder=0,bit;
-    for (bit=0;bit<32u;bit++) {
-        remainder=(remainder<<1)|((value>>31)&1u);
-        value<<=1;
-        if (remainder>=60u) remainder-=60u;
-    }
-    return remainder;
+    u64 product=(u64)value*0x88888889ull;
+    u32 quotient=(u32)(product>>37);
+    return value-quotient*60u;
 }
 
 static unsigned takeTens(unsigned *value)
 {
-    unsigned v=*value,tens;
-    if (v>=50u) { tens=5u; v-=50u; }
-    else if (v>=40u) { tens=4u; v-=40u; }
-    else if (v>=30u) { tens=3u; v-=30u; }
-    else if (v>=20u) { tens=2u; v-=20u; }
-    else if (v>=10u) { tens=1u; v-=10u; }
-    else tens=0u;
-    *value=v;
+    unsigned tens=0;
+    while (*value>=10u) { *value-=10u; tens++; }
     return tens;
 }
 
@@ -174,7 +165,7 @@ int OfficialBulkSync_Process(void *stateVoid,volatile u32 *commandBuffer)
     u8 *state=(u8 *)stateVoid,*flow,*object,*body;
     OfficialBulkMetadata meta={0u,0u,0u};
     char backupPath[48];
-    unsigned substate,sec=0;
+    unsigned sec=0,substate;
     int applyResult,haveMeta;
 
     if (!state || !commandBuffer) return 0;
