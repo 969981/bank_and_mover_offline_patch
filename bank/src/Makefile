@@ -1,4 +1,4 @@
-.PHONY: all clean verify FORCE host-test
+.PHONY: all clean verify FORCE host-test fault-matrix
 
 export MSYS2_ARG_CONV_EXCL := *
 
@@ -18,6 +18,9 @@ PATCHED := $(BUILD)/00040000000C9B00.dec.code
 RELEASE_ROOT := $(TARGET_ROOT)/../release
 RELEASE_TITLE := $(RELEASE_ROOT)/$(TITLE_ID)
 RELEASE_IPS := $(RELEASE_TITLE)/code.ips
+FAULT_VARIANT := B
+FAULT_RELEASE_ROOT := $(RELEASE_ROOT)/fault-injection-$(FAULT_VARIANT)
+FAULT_RELEASE_TITLE := $(FAULT_RELEASE_ROOT)/$(TITLE_ID)
 PROD_OBJECT := $(BUILD)/official_bulk_sync_prod.o
 RECOVERY_WAL_OBJECT := $(BUILD)/official_recovery_wal_thumb.o
 SYMBOLS := $(BUILD)/official-armips-symbols.txt
@@ -48,6 +51,14 @@ $(RELEASE_IPS): $(PATCHED)
 	rm -f "$@"
 	"$(IPS_TOOL)" --create --ips "$(BASE)" "$(PATCHED)" "$@"
 
+fault-matrix: all
+	"$(PYTHON)" "$(TOOLS)/build_recovery_fault_patch.py" \
+		--variant "$(FAULT_VARIANT)" \
+		--base "$(BASE)" \
+		--patched "$(PATCHED)" \
+		--out-dir "$(FAULT_RELEASE_TITLE)" \
+		--point all
+
 host-test:
 	$(CC_FOR_BUILD) -std=c11 -O2 -Wall -Wextra -Werror official_bulk_sync_host_test.c official_bulk_sync_core.c -o "$(BUILD)/official_bulk_sync_host_test"
 	"$(BUILD)/official_bulk_sync_host_test"
@@ -56,6 +67,6 @@ verify: $(PATCHED) $(RELEASE_IPS) verify_official_bulk_sync.py
 	"$(PYTHON)" verify_official_bulk_sync.py --base "$(BASE)" --patched "$(PATCHED)" --symbols "$(SYMBOLS)" --ips "$(RELEASE_IPS)"
 
 clean:
-	rm -rf "$(RELEASE_TITLE)" "$(BUILD)"
+	rm -rf "$(RELEASE_TITLE)" "$(FAULT_RELEASE_ROOT)" "$(BUILD)"
 
 FORCE:
