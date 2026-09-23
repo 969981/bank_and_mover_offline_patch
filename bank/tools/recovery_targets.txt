@@ -1,0 +1,8 @@
+# Bank outer/recovery/save states
+002ACBDC  # state 8: remote record / transaction query
+002AF034  # state 11: transaction recovery selection
+002A93F4  # state 17: other-side recovery / retry
+002A8760  # state 18: current-user recovery / retry
+002A9118  # state 22: save failure handling
+002AD7BC  # state 23: forced rollback / recovery
+002B1CF8  # state 7: save transaction
