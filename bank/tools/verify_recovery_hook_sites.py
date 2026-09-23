@@ -12,20 +12,20 @@ EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40
 
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
-    # Exact transaction pointer and RMC52 call in BankSave_SerializeAndStage.
     "save_stage_tx_load": (0x002B2494, bytes.fromhex("28 30 94 e5")),
     "save_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
 
 AUTO = {
-    # Variant A journals status=1 before Stage and reuses stock case7/case8.
     "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    # Stock writes local status=2 here after successful game save; Variant A
+    # changes only this immediate to 1 so every unresolved transaction rolls back.
+    "save_case5_local_status2": (0x002B1F50, bytes.fromhex("02 10 a0 e3")),
     "save_case7_status1_entry": (0x002B1FF8, bytes.fromhex("08 00 94 e5")),
     "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
 }
 
 SMART = {
-    # Variant B uses the same pre-Stage journal plus precise state18 decisions.
     "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
     "save_case7_status1_entry": (0x002B1FF8, bytes.fromhex("08 00 94 e5")),
     "save_case8_result": (0x002B2090, bytes.fromhex("01 00 50 e3")),
