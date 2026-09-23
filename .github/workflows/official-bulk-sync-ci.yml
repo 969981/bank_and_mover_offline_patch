@@ -26,11 +26,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install ARM compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
-
       - name: Run recovery extractor unit tests
         run: |
           python -m unittest bank/tools/test_extract_recovery_functions.py -v
@@ -47,6 +42,11 @@ jobs:
           name: bank-recovery-static-report
           path: /tmp/bank-recovery-functions.txt
           if-no-files-found: error
+
+      - name: Install ARM compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
 
       - name: Run host merge and state-gating contract test
         run: |
