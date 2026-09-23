@@ -1,6 +1,12 @@
 import unittest
 
-from verify_recovery_hook_sites import EXPECTED_SIZE, IMAGE_BASE, sites_for, verify_blob
+from verify_recovery_hook_sites import (
+    EXPECTED_SIZE,
+    IMAGE_BASE,
+    RECOVERY_SESSION_FLAG,
+    sites_for,
+    verify_blob,
+)
 
 
 class HookSiteTests(unittest.TestCase):
@@ -23,15 +29,26 @@ class HookSiteTests(unittest.TestCase):
         errors = verify_blob(bytes(blob), "A", check_hash=False)
         self.assertTrue(any("save_case1_prejournal_entry" in error for error in errors))
 
+    def test_corrupt_a_case5_status_fails(self):
+        blob = bytearray(self.fixture("A"))
+        blob[0x002B1F50 - IMAGE_BASE] ^= 1
+        errors = verify_blob(bytes(blob), "A", check_hash=False)
+        self.assertTrue(any("save_case5_status_immediate" in error for error in errors))
+
     def test_corrupt_a_case8_result_fails(self):
         blob = bytearray(self.fixture("A"))
         blob[0x002B2090 - IMAGE_BASE] ^= 1
         errors = verify_blob(bytes(blob), "A", check_hash=False)
         self.assertTrue(any("save_case8_result_cmp" in error for error in errors))
 
+    def test_nonzero_recovery_scratch_fails(self):
+        blob = bytearray(self.fixture("A"))
+        blob[RECOVERY_SESSION_FLAG - IMAGE_BASE] = 1
+        errors = verify_blob(bytes(blob), "A", check_hash=False)
+        self.assertTrue(any("recovery_session_scratch" in error for error in errors))
+
     def test_a_does_not_require_b_only_state18_sites(self):
         blob = bytearray(self.fixture("A"))
-        # B-only state18 bytes are absent/zero in the A fixture by construction.
         self.assertEqual(blob[0x002A8968 - IMAGE_BASE:0x002A896C - IMAGE_BASE], b"\x00" * 4)
         self.assertEqual(verify_blob(bytes(blob), "A", check_hash=False), [])
 
