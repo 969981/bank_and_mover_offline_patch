@@ -33,11 +33,10 @@ OfficialRecovery_WalCase1:
     bx r3
 
 1:
-    // Durable status=3 WAL exists. Disarm before the untouched stock BL at
-    // 0x002B1DE8 starts the real SerializeAndStage call.
+    // On this second invocation r3 still holds RecoverySessionFlag from the
+    // entry load; no need to reload the same literal before disarming it.
     movs r1,#0
     strb r1,[r4,r2]
-    ldr r3,=RecoverySessionFlag
     strb r1,[r3]
 2:
     mov r0,r4
