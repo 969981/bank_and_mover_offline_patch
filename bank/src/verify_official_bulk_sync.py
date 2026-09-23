@@ -4,11 +4,15 @@ import argparse, hashlib, pathlib
 BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
 ALLOWED = [
+    (0x002A8A74,0x002A8A78,"recovery invalid-status funnel"),
+    (0x002A8AD0,0x002A8AD4,"recovery mismatch funnel"),
+    (0x002A8B4C,0x002A8B6C,"recovery A rollback shim in unreachable case8 head"),
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
     (0x00313910,0x00314000,"official RX text-tail payload"),
 ]
 CAVES = [(0x00313910,0x00314000)]
 EXPECTED_SYMBOLS = {
+    "officialrecovery_a_rollbackshim":0x002A8B4C,
     "officialbulk_bankdatasyncdispatch":0x00313910,
     "officialbulksync_process":0x003139D4,
 }
@@ -61,6 +65,9 @@ def main():
         if a==b: continue
         addr=CODE_BASE+i
         assert any(s<=addr<e for s,e,_ in ALLOWED), f"unexpected patched byte at {addr:08X}"
+    assert addr_slice(base,0x002A8A74,0x002A8A78)!=addr_slice(patched,0x002A8A74,0x002A8A78)
+    assert addr_slice(base,0x002A8AD0,0x002A8AD4)!=addr_slice(patched,0x002A8AD0,0x002A8AD4)
+    assert addr_slice(base,0x002A8B4C,0x002A8B6C)!=addr_slice(patched,0x002A8B4C,0x002A8B6C)
     assert addr_slice(base,0x002AF460,0x002AF464)!=addr_slice(patched,0x002AF460,0x002AF464)
     assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
         "official-only patch must not modify mapped data/BSS image"
@@ -71,6 +78,6 @@ def main():
         assert name not in syms, f"forbidden cross-ISA helper symbol present: {name}"
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
-    print("official bulk sync static verification passed")
+    print("official bulk sync + recovery A static verification passed")
 
 if __name__=="__main__": main()
