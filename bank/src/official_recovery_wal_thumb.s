@@ -110,10 +110,10 @@ OfficialRecovery_WalLocalStatusB:
     movs r2,#0x88
     movs r0,#2
     strb r0,[r4,r2]
-    movs r0,#4
-    b 7f
 3:
-    // Stale/foreign private WAL cannot authorize any remote operation.
+    // Exact WAL and stale/foreign status=3 both continue through state4.
+    // Only the exact path set +0x88=2, which enables Rollback fallback if the
+    // game record itself cannot prove a Commit.
     movs r0,#4
     b 7f
 4:
