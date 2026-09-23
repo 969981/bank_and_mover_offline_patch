@@ -66,7 +66,7 @@ jobs:
             -o /tmp/bulk_test
           /tmp/bulk_test
 
-      - name: Verify smart production ARM payload budget
+      - name: Verify production payload and WAL B budget
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi
@@ -76,94 +76,12 @@ jobs:
           arm-none-eabi-size /tmp/smart-prod.o
           test "$(arm-none-eabi-size /tmp/smart-prod.o | awk 'NR==2 {print $1}')" -eq 1577
 
-          cat >/tmp/recovery-b-tail.s <<'EOF'
-          .syntax unified
-          .cpu mpcore
-          .arm
-          .text
-          .global recovery_b_pre_stage
-          recovery_b_pre_stage:
-              ldrb r1,[r4,#0x48]
-              cmp r1,#8
-              beq 1f
-              mov r1,#7
-              strb r1,[r4,#0x48]
-              mov r0,#7
-              b 9f
-          1:
-              mov r1,#0
-              strb r1,[r4,#0x48]
-              mov r0,r4
-              bl 8f
-              b 9f
-          .global recovery_b_after_journal
-          recovery_b_after_journal:
-              ldrb r1,[r4,#0x48]
-              cmp r1,#7
-              bne 3f
-              cmp r0,#1
-              bne 4f
-              mov r1,#8
-              strb r1,[r4,#0x48]
-              mov r0,#1
-              b 9f
-          4:
-              mov r1,#0
-              strb r1,[r4,#0x48]
-              mov r0,#20
-              b 9f
-          3:
-              cmp r0,#1
-              b 9f
-          .global recovery_b_local_clear
-          recovery_b_local_clear:
-              mov r1,#0
-              strb r1,[r4,#0x88]
-              b 8f
-          .global recovery_b_game_mismatch
-          recovery_b_game_mismatch:
-              ldrb r0,[r4,#0x88]
-              cmp r0,#2
-              moveq r0,#6
-              movne r0,#8
-              str r0,[r4,#0x10]
-              b 8f
-          8:
-              bx lr
-          9:
-              b 9b
-          EOF
-          arm-none-eabi-as -mcpu=mpcore /tmp/recovery-b-tail.s -o /tmp/recovery-b-tail.o
-          arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-b-tail.o /tmp/recovery-b-tail.bin
-          echo '=== Recovery B tail shims ==='
-          arm-none-eabi-objdump -d /tmp/recovery-b-tail.o
-          # Exclude the two 4-byte dummy terminal labels (8 bytes) used only to
-          # make this standalone CI assembly linkable: 152 - 8 = 144 real bytes.
-          test "$(( $(stat -c %s /tmp/recovery-b-tail.bin) - 8 ))" -eq 144
+          arm-none-eabi-as -mcpu=mpcore bank/src/official_recovery_wal_thumb.s -o /tmp/recovery-wal-b.o
+          arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-wal-b.o /tmp/recovery-wal-b.bin
+          echo '=== Recovery B WAL Thumb ==='
+          arm-none-eabi-objdump -d /tmp/recovery-wal-b.o
+          test "$(stat -c %s /tmp/recovery-wal-b.bin)" -eq 156
 
-          cat >/tmp/recovery-b-inline.s <<'EOF'
-          .syntax unified
-          .cpu mpcore
-          .arm
-          .text
-          inline_local_status:
-              cmp r0,#1
-              bne 1f
-              mov r1,#2
-              strb r1,[r4,#0x88]
-              b 2f
-          1:
-              cmp r0,#2
-              beq 3f
-              b 4f
-          2:
-          3:
-          4:
-          EOF
-          arm-none-eabi-as -mcpu=mpcore /tmp/recovery-b-inline.s -o /tmp/recovery-b-inline.o
-          arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-b-inline.o /tmp/recovery-b-inline.bin
-          test "$(stat -c %s /tmp/recovery-b-inline.bin)" -eq 32
-
-          # RX tail = 0x6F0 = 1776.  V3 object 1577 + existing dispatch 36 +
-          # Recovery B tail 144 = 1757, leaving 19 bytes of mapped RX tail.
-          test $((1577 + 36 + 144)) -le 1776
+          # RX tail = 0x6F0 = 1776 bytes. Existing ARM dispatcher is 36 bytes.
+          # 1577 + 36 + 156 = 1769, leaving only 7 bytes: keep this hard-gated.
+          test $((1577 + 36 + 156)) -le 1776
