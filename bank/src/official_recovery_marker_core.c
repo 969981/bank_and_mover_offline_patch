@@ -115,6 +115,36 @@ int OfficialRecoveryMarker_Decode(const unsigned char marker[OFFICIAL_RECOVERY_M
     return 1;
 }
 
+int OfficialRecoveryMarker_EncodePending(
+    unsigned char out[OFFICIAL_RECOVERY_MARKER_SIZE],unsigned profile)
+{
+    OfficialRecoveryRecord empty={0};
+    return OfficialRecoveryMarker_Encode(out,&empty,profile,
+        OFFICIAL_RECOVERY_MARKER_FLAG_BULK_PENDING);
+}
+
+int OfficialRecoveryMarker_IsPending(
+    const unsigned char marker[OFFICIAL_RECOVERY_MARKER_SIZE],unsigned profile)
+{
+    OfficialRecoveryRecord saved;
+    unsigned savedProfile=0,flags=0;
+    if (profile<1u || profile>8u) return 0;
+    if (!OfficialRecoveryMarker_Decode(marker,&saved,&savedProfile,&flags)) return 0;
+    (void)saved;
+    return savedProfile==profile &&
+        (flags&OFFICIAL_RECOVERY_MARKER_FLAG_BULK_PENDING)!=0u &&
+        (flags&OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED)==0u;
+}
+
+int OfficialRecoveryMarker_BindTransaction(
+    unsigned char marker[OFFICIAL_RECOVERY_MARKER_SIZE],
+    const OfficialRecoveryRecord *server,unsigned profile)
+{
+    if (!server || !OfficialRecoveryMarker_IsPending(marker,profile)) return 0;
+    return OfficialRecoveryMarker_Encode(marker,server,profile,
+        OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED);
+}
+
 int OfficialRecoveryMarker_MatchesServer(
     const unsigned char marker[OFFICIAL_RECOVERY_MARKER_SIZE],
     const OfficialRecoveryRecord *server,unsigned profile)
@@ -123,6 +153,7 @@ int OfficialRecoveryMarker_MatchesServer(
     unsigned savedProfile=0,flags=0;
     if (!server || !OfficialRecoveryMarker_Decode(marker,&saved,&savedProfile,&flags)) return 0;
     if ((flags&OFFICIAL_RECOVERY_MARKER_FLAG_BULK_APPLIED)==0u) return 0;
+    if ((flags&OFFICIAL_RECOVERY_MARKER_FLAG_BULK_PENDING)!=0u) return 0;
     if (savedProfile!=profile) return 0;
     return saved.dataId==server->dataId &&
         saved.transactionPassword==server->transactionPassword &&
