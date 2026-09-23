@@ -10,26 +10,35 @@ IMAGE_BASE = 0x00100000
 EXPECTED_SIZE = 0x2AC000
 EXPECTED_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 
-# Production WAL hooks.  RMC52/Stage itself remains stock; the local status=3
-# write-ahead journal is persisted before case1 is allowed to call it.
 COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
-    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
-    "save_case7_status_immediate": (0x002B1FFC, bytes.fromhex("01 10 a0 e3")),
-    "save_case8_success_move": (0x002B2094, bytes.fromhex("0b 00 a0 03")),
-    "state18_local_status2_cmp": (0x002A8974, bytes.fromhex("02 00 50 e3")),
     # Verified invariant: state+0x28 is already the exact transaction passed to Stage.
     "save_stage_tx_load": (0x002B2494, bytes.fromhex("28 30 94 e5")),
     "save_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
 
-AUTO = {}
+AUTO = {
+    # Variant A adds only the pre-RMC52 diversion and case8 journal result hook.
+    # case7 keeps stock status=1 and state18 remains completely stock.
+    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    "save_case8_result_cmp": (0x002B2090, bytes.fromhex("01 00 50 e3")),
+}
 
 SMART = {
-    # Variant B uses transient source flag 2 only after a full exact status=3 WAL
-    # match.  If the subsequent game record mismatches, this funnel chooses
-    # stock rollback; ordinary/invalid game recovery still remains state8.
-    "state18_game_mismatch_funnel": (0x002A8AD0, bytes.fromhex("08 00 a0 e3")),
+    # Kept for cross-branch research fixtures; B has additional production hooks.
+    "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
+    "save_case7_status_immediate": (0x002B1FFC, bytes.fromhex("01 10 a0 e3")),
+    "save_case8_result_cmp": (0x002B2090, bytes.fromhex("01 00 50 e3")),
+    "state18_local_status_decision": (0x002A8968, bytes.fromhex("01 00 50 e3")),
+    "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
+    "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
+    "state18_game_mismatch_decision_block": (
+        0x002A8A64,
+        bytes.fromhex(
+            "00 20 a0 e3 02 10 a0 e1 02 00 a0 e1 00 00 a0 e1 "
+            "08 00 a0 e3 00 f0 20 e3"
+        ),
+    ),
 }
 
 
