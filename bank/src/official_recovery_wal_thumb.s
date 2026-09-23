@@ -9,7 +9,6 @@
 // The WAL is persisted through the stock Bank-local save path before RMC52.
 
 .equ RecoverySessionFlag, 0x003ABFFC
-.equ BankSaveSerializeAndStage, 0x002B2320
 .equ BankSaveSetSubstate, 0x002B2174
 .equ State18StoreSubstate, 0x002A8980
 
@@ -33,16 +32,15 @@ OfficialRecovery_WalCase1:
     bx r3
 
 1:
-    // The exact status=3 WAL is durable. Disarm before the real Stage call so
-    // later stock game-save failures keep native status=1 semantics.
+    // Durable status=3 WAL exists. Disarm before the untouched stock BL at
+    // 0x002B1DE8 starts the real SerializeAndStage call.
     movs r1,#0
     strb r1,[r4,r2]
     ldr r3,=RecoverySessionFlag
     strb r1,[r3]
 2:
     mov r0,r4
-    ldr r3,=BankSaveSerializeAndStage
-    bx r3
+    bx lr
 
 .thumb_func
 .global OfficialRecovery_WalSelectStatus
@@ -79,7 +77,6 @@ OfficialRecovery_WalCase8Result:
     ldr r3,=BankSaveSetSubstate
     bx r3
 3:
-    // Ordinary case8: restore the flags expected by stock MOVEQ/BEQ.
     cmp r3,#1
     bx lr
 
