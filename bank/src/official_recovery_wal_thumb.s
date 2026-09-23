@@ -4,14 +4,16 @@
 .text
 .align 2
 
-// Recovery A production WAL. Only a session in which Official Bulk Sync
-// actually applied data may create the private status=3 write-ahead record.
-// The exact transaction is persisted through the stock Bank-local save path
-// before RMC52 can create the server-side pending transaction.
+// Recovery A production WAL.
+//
+// Variant A is Bulk-only and always prefers rollback after an interrupted
+// transaction. Therefore no private recovery status is needed: before RMC52,
+// divert once through the stock case7 local-save path, which persists the exact
+// BankTransactionParam with native status=1. Stock state18 already understands
+// an exact status=1 record and will Rollback it without any recovery hook.
 
 .equ RecoverySessionFlag, 0x003ABFFC
 .equ BankSaveSetSubstate, 0x002B2174
-.equ State18StoreSubstate, 0x002A8980
 
 .thumb_func
 .global OfficialRecovery_WalCase1
@@ -26,6 +28,8 @@ OfficialRecovery_WalCase1:
     cmp r1,#8
     beq 1f
 
+    // First pass: send stock state7 through its native status=1 local recovery
+    // save before any Stage/RMC52 request can create server pending state.
     movs r1,#7
     strb r1,[r4,r2]
     movs r0,#7
@@ -33,8 +37,8 @@ OfficialRecovery_WalCase1:
     bx r3
 
 1:
-    // On this second invocation r3 still holds RecoverySessionFlag from the
-    // entry load; no need to reload the same literal before disarming it.
+    // Second pass after durable status=1 WAL. r3 still points at the transient
+    // BulkSessionFlag loaded at function entry, so disarm it before Stage.
     movs r1,#0
     strb r1,[r4,r2]
     strb r1,[r3]
@@ -43,21 +47,10 @@ OfficialRecovery_WalCase1:
     bx lr
 
 .thumb_func
-.global OfficialRecovery_WalSelectStatus
-OfficialRecovery_WalSelectStatus:
-    movs r2,#0x48
-    ldrb r1,[r4,r2]
-    cmp r1,#7
-    bne 1f
-    movs r1,#3
-    bx lr
-1:
-    movs r1,#1
-    bx lr
-
-.thumb_func
 .global OfficialRecovery_WalCase8Result
 OfficialRecovery_WalCase8Result:
+    // Used at stock case8's `cmp r0,#1`. Only the pre-Stage journal pass is
+    // intercepted; ordinary case7 rollback saves keep the native case8 path.
     mov r3,r0
     movs r2,#0x48
     ldrb r1,[r4,r2]
@@ -65,57 +58,21 @@ OfficialRecovery_WalCase8Result:
     bne 3f
     cmp r3,#1
     bne 2f
+
+    // WAL persisted: return to case1, where the flag is cleared and Stage starts.
     movs r1,#8
     strb r1,[r4,r2]
     movs r0,#1
     ldr r3,=BankSaveSetSubstate
     bx r3
 2:
+    // Could not persist the rollback WAL: never start the remote transaction.
     movs r1,#0
     strb r1,[r4,r2]
     movs r0,#20
     ldr r3,=BankSaveSetSubstate
     bx r3
 3:
+    // Ordinary case8: reconstruct stock CMP flags for MOVEQ/BEQ at 0x2B2094.
     cmp r3,#1
-    bx lr
-
-.thumb_func
-.global OfficialRecovery_WalLocalStatusA
-OfficialRecovery_WalLocalStatusA:
-    cmp r0,#3
-    bne 9f
-
-    // dataId + curVersion already matched in stock state18. Complete ownership
-    // validation with updateVersion, size and the 64-bit transactionPassword.
-    ldr r1,[r4,#0x28]
-    ldr r2,[r4,#0x4c]
-    ldr r3,[r1,#0x0c]
-    eors r2,r3
-    ldr r3,[r4,#0x50]
-    ldr r0,[r1,#0x10]
-    eors r3,r0
-    orrs r2,r3
-    ldr r3,[r4,#0x58]
-    ldr r0,[r1,#0x18]
-    eors r3,r0
-    orrs r2,r3
-    ldr r3,[r4,#0x5c]
-    ldr r0,[r1,#0x1c]
-    eors r3,r0
-    orrs r2,r3
-    bne 8f
-
-    // Variant A: an exact private WAL is always the safe rollback fallback.
-    movs r0,#6
-    b 7f
-8:
-    // Stale/foreign status=3 data is never trusted.
-    movs r0,#4
-7:
-    ldr r3,=State18StoreSubstate
-    bx r3
-9:
-    // Reconstruct the stock CMP replaced at 0x002A8974.
-    cmp r0,#2
     bx lr
