@@ -11,6 +11,7 @@ Build an experimental recovery path for Pokémon Bank v1.5 that prevents Officia
 - Original functional baseline: `feature/official-bank-bulk-sync`
 - Bank title: `00040000000C9B00`, internal v1.5
 - Verified stock `.code` SHA-256: `2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF`
+- The supplied Bank CIA is a NoCrypto NCCH and can be unpacked directly; the compressed ExeFS `.code` expands from `0x1776F4` to `0x2AC000` and matches the hash above.
 
 ## Confirmed Stock Behavior
 
@@ -64,7 +65,9 @@ This phase is not sufficient for automatic recovery.
 
 ### Phase 2 — TX_BOUND
 
-After stock Prepare/Stage has produced the actual `BankTransactionParam`, bind the marker to:
+Bind the marker **as soon as RMC 52 `PrepareUpdateBankObject` has returned the real server `BankTransactionParam`, before the HPP/HTTP upload can fail**.
+
+Persist:
 
 ```text
 dataId
@@ -78,6 +81,27 @@ checksum
 ```
 
 Only a same-profile pending marker may be upgraded.
+
+### Important correction: state7 case3 is too late
+
+The earlier design used state7 case3 as the transaction-bind point. Verified stock machine code shows that case3 is reached only after the composite Stage/upload callback has already succeeded.
+
+That misses the most important lock window:
+
+```text
+PrepareUpdate creates server pending T1
+        ↓
+HPP/upload/network fails before state7 case3
+        ↓
+GameRecoveryRecord never receives T1
+Bank-local record never receives T1
+        ↓
+next startup: server=T1, local/game=old/empty
+        ↓
+state18 mismatch
+```
+
+Therefore production A must bind `TX_BOUND` at the PrepareUpdate response boundary, not at case3.
 
 ## Recovery Decision
 
@@ -96,12 +120,45 @@ otherwise:
 
 The reconstructed record must use the current server transaction fields, never fields copied from a stale game/local recovery record.
 
+## Exact state18 Hook Surface
+
+Verified stock machine code gives a single clean mismatch convergence point:
+
+```asm
+0x002A89D0  BNE 0x002A8AD0   ; dataId mismatch
+0x002A89E0  BNE 0x002A8AD0   ; curVersion mismatch
+...
+0x002A8AD0  MOV r0,#8         ; stock mismatch/error substate
+```
+
+Original bytes at `0x002A8AD0`:
+
+```text
+08 00 A0 E3
+```
+
+At this point:
+
+- `r4` is still the state18 object;
+- `[r4+0x28]` still points at the current server pending transaction;
+- a fail-closed shim can preserve stock behavior by executing `mov r0,#8`;
+- an exact-marker match can build the canonical current-server context in `state+0x40/+0x58` and select substate 6.
+
+Stock Rollback is then still performed by the original client:
+
+```text
+state18 substate 6
+ -> 0x001D5C28 BankRemote_RollbackStagedUpdate
+```
+
+No custom network protocol is required.
+
 ## Runtime Write Policy
 
 Do not immediately raw-write the game `main` merely to make the comparison pass. Preferred order:
 
-1. Construct a runtime recovery record from current server transaction.
-2. Invoke/rejoin the stock Rollback path.
+1. Construct the state18 runtime transaction context from current server transaction.
+2. Select/rejoin the stock Rollback path.
 3. After stock Rollback succeeds, clear the tool marker.
 4. Allow stock cleanup to clear/persist the appropriate game/local recovery state.
 
@@ -127,24 +184,43 @@ Variant A must retain stock mismatch behavior when any of these are true:
 - server transaction status is unsupported/unknown;
 - runtime hook cannot prove it is executing in the state18 recovery path.
 
-## Hook Surface
+## Runtime Integration Points
 
-Minimum runtime integration points:
+Minimum integration points after the machine-code correction:
 
 1. state16 bulk-apply success: persist BULK_PENDING marker;
-2. state7 after Prepare/Stage returns the actual transaction: bind marker to TX_BOUND;
-3. state18 mismatch edge: if exact marker/server match, construct `status=1` recovery context and rejoin stock Rollback;
+2. **PrepareUpdate response, before HPP upload completion: bind marker to TX_BOUND**;
+3. `0x002A8AD0` state18 mismatch convergence: if exact marker/server match, reconstruct current-server context and route to stock Rollback;
 4. normal Complete success: delete/invalidate marker;
 5. recovery Rollback success: delete/invalidate marker.
 
-Exact ARM branch sites and overwritten bytes must be derived from the verified stock `.code`; no guessed machine-code patch is allowed.
+The exact PrepareUpdate response instruction site is the only remaining unresolved hook address. No guessed machine-code patch is allowed.
+
+## Why final-Complete failure is not the primary mismatch window
+
+Verified state7 flow is:
+
+```text
+case3  write GameRecoveryRecord(status=2) from exact tx
+       start game main save
+case4  wait game save
+case5  only after game save success, write Bank-local status=2
+...
+case9  CompleteUpdate
+```
+
+Therefore once game save has actually succeeded, stock already has at least the game-side exact transaction/status=2 available for the next state18 recovery. A network failure only at final Complete should normally be recoverable by stock.
+
+This further supports prioritizing the pre-case3 Prepare/HPP failure window for Variant A.
 
 ## Code-Space Constraints
 
 - Existing V3 RX tail: `0x00313910..0x00314000` (`0x6F0` bytes).
-- Do not execute from mapped `.data`.
+- Existing Bulk V3 already consumes most of that tail.
+- Do not execute from mapped `.data` or `.rodata`.
 - Prefer a minimal assembly shim and reuse existing filesystem helpers.
-- Static verifier must whitelist every modified stock instruction and fail when payload exceeds the verified executable-space budget.
+- If additional space is needed, use only a stock function body proven unreachable by XREF/CFG analysis.
+- Static verifier must whitelist every modified stock instruction and fail when payload exceeds verified executable space.
 
 ## Testing
 
@@ -162,8 +238,9 @@ Host/static tests must cover:
 Real-hardware validation must include:
 
 - clean bulk save;
-- network failure before transaction bind;
-- network failure after transaction bind;
+- network failure before PrepareUpdate returns;
+- **network failure after PrepareUpdate returns but before state7 case3**;
+- network failure after game save success;
 - observed Trainer/save mismatch with exact marker;
 - automatic rollback followed by successful re-entry to Bank;
 - repeat clean bulk save after recovery;
