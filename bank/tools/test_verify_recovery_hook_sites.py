@@ -17,11 +17,11 @@ class HookSiteTests(unittest.TestCase):
     def test_variant_b_sites(self):
         self.assertEqual(verify_blob(self.fixture("B"), "B", check_hash=False), [])
 
-    def test_corrupt_hook_byte_fails(self):
+    def test_corrupt_exact_game_dataid_mismatch_branch_fails(self):
         blob = bytearray(self.fixture("B"))
-        blob[0x002A8AD0 - IMAGE_BASE] ^= 1
+        blob[0x002A89D0 - IMAGE_BASE] ^= 1
         errors = verify_blob(bytes(blob), "B", check_hash=False)
-        self.assertTrue(any("state18_mismatch_funnel" in error for error in errors))
+        self.assertTrue(any("state18_game_dataid_mismatch_bne" in error for error in errors))
 
     def test_a_does_not_require_b_only_sites(self):
         self.assertEqual(verify_blob(self.fixture("A"), "A", check_hash=False), [])
