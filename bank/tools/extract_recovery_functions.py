@@ -24,40 +24,35 @@ FUNCTION_MARKER_RE = re.compile(
 )
 
 DEFAULT_ADDRESSES = (
-    # Outer state factory/selector and recovery states.
-    "002a5580",  # choose next outer state
-    "002a5a7c",  # state object factory
-    "002acbdc",  # state 8 - initial remote/transaction query
-    "002adc50",  # state 10 - game selection
-    "002af034",  # state 11 - post-selection decision
-    "002a93f4",  # state 17 - game-record recovery/retry
-    "002a9700",  # state 17 initializer
-    "002a8760",  # state 18 - current-user reconciliation
-    "002a9118",  # state 22 - save-error UI
-    "002ad7bc",  # historically labeled state 23; verify containing function
-    "002b1cf8",  # state 7 - normal save transaction
-    # Remote transaction helpers/callbacks.
-    "002a26ac",  # query metadata
-    "002a27c8",  # query recovery token
-    "002a3144",  # query transaction
-    "002d0edc",  # query transaction success callback
-    "001d5d74",  # commit staged update
-    "001d5c28",  # rollback staged update
-    # Server/recovery object getters used by state 18.
+    "002a5580",
+    "002a5a7c",
+    "002acbdc",
+    "002adc50",
+    "002af034",
+    "002a93f4",
+    "002a9700",
+    "002a8760",
+    "002a9118",
+    "002ad7bc",
+    "002b1cf8",
+    "002a26ac",
+    "002a27c8",
+    "002a3144",
+    "002d0edc",
+    "001d5d74",
+    "001d5c28",
     "002cb8a8",
     "002cb8c4",
     "002cb8d0",
     "002cb8dc",
     "002cb8e8",
     "002cb908",
-    # Runtime/root transaction setters used by state 7.
     "001d4d48",
     "001d4d54",
     "001d4d60",
     "001d4d6c",
     "001d4d78",
     "001d4d84",
-    # Active-game/profile and local save helpers.
     "00233a6c",
     "0023234c",
     "00232338",
@@ -115,13 +110,6 @@ def index_functions(text: str) -> dict[str, tuple[int, int]]:
 def resolve_function_address(
     functions: dict[str, tuple[int, int]], requested: str
 ) -> str:
-    """Resolve an instruction/symbol address to its preceding Ghidra function.
-
-    The Ghidra export is ordered by function entry address. If the requested
-    address is not itself a marker, the nearest preceding function marker is
-    the only containing-function candidate until the next marker. The caller
-    must keep the requested/resolved distinction visible in its report.
-    """
     normalized = normalize_address(requested)
     if normalized in functions:
         return normalized
@@ -131,6 +119,21 @@ def resolve_function_address(
     if position < 0:
         raise KeyError(normalized)
     return f"{ordered[position]:08x}"
+
+
+def list_functions_in_range(
+    functions: dict[str, tuple[int, int]], start: str, end: str
+) -> list[str]:
+    """Return function entries in the half-open address range [start, end)."""
+    start_value = int(normalize_address(start), 16)
+    end_value = int(normalize_address(end), 16)
+    if start_value >= end_value:
+        raise ValueError("range start must be lower than range end")
+    return [
+        address
+        for address in sorted(functions, key=lambda value: int(value, 16))
+        if start_value <= int(address, 16) < end_value
+    ]
 
 
 def extract_function(text: str, address: str) -> str:
@@ -216,6 +219,22 @@ def build_report(
     return "\n".join(out), missing
 
 
+def build_range_report(text: str, range_start: str, range_end: str) -> str:
+    function_index = index_functions(text)
+    addresses = list_functions_in_range(function_index, range_start, range_end)
+    out = [
+        "# Pokémon Bank recovery function range",
+        "",
+        f"range=[0x{normalize_address(range_start).upper()},0x{normalize_address(range_end).upper()})",
+        f"functions={len(addresses)}",
+    ]
+    for address in addresses:
+        start, end = function_index[address]
+        out.extend(["", f"## 0x{address.upper()}", "```c", text[start:end].rstrip(), "```"])
+    out.append("")
+    return "\n".join(out)
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("decompile", type=Path, help="path to code.bin_all_functions.c")
@@ -232,6 +251,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="literal/function reference to search globally; repeatable",
     )
     parser.add_argument("--context-lines", type=int, default=4)
+    parser.add_argument("--range-start", help="enumerate function entries from this address")
+    parser.add_argument("--range-end", help="exclusive end address for --range-start")
     parser.add_argument("--output", type=Path)
     return parser.parse_args(argv)
 
@@ -240,9 +261,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
         text = args.decompile.read_text(encoding="utf-8", errors="replace")
-        addresses = args.addresses or list(DEFAULT_ADDRESSES)
-        references = args.references or list(DEFAULT_REFERENCES)
-        report, missing = build_report(text, addresses, references, args.context_lines)
+        if bool(args.range_start) != bool(args.range_end):
+            raise ValueError("--range-start and --range-end must be supplied together")
+        if args.range_start:
+            report = build_range_report(text, args.range_start, args.range_end)
+            missing: list[str] = []
+        else:
+            addresses = args.addresses or list(DEFAULT_ADDRESSES)
+            references = args.references or list(DEFAULT_REFERENCES)
+            report, missing = build_report(text, addresses, references, args.context_lines)
     except (OSError, ValueError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
