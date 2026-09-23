@@ -19,9 +19,11 @@ RELEASE_ROOT := $(TARGET_ROOT)/../release
 RELEASE_TITLE := $(RELEASE_ROOT)/$(TITLE_ID)
 RELEASE_IPS := $(RELEASE_TITLE)/code.ips
 PROD_OBJECT := $(BUILD)/official_bulk_sync_prod.o
+RECOVERY_WAL_OBJECT := $(BUILD)/official_recovery_wal_thumb.o
 SYMBOLS := $(BUILD)/official-armips-symbols.txt
 
 CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
+AS := $(DEVKITARM)/bin/arm-none-eabi-as
 CFLAGS := -std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables \
 	-fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common \
@@ -35,7 +37,10 @@ $(BUILD):
 $(PROD_OBJECT): official_bulk_sync_prod.c official_bulk_sync.c official_bulk_sync_core.c official_bulk_sync.h | $(BUILD)
 	"$(CC)" $(CFLAGS) -c "$<" -o "$@"
 
-$(PATCHED): FORCE main_official.s $(PROD_OBJECT) $(BASE)
+$(RECOVERY_WAL_OBJECT): official_recovery_wal_thumb.s | $(BUILD)
+	"$(AS)" -mcpu=mpcore "$<" -o "$@"
+
+$(PATCHED): FORCE main_official.s $(PROD_OBJECT) $(RECOVERY_WAL_OBJECT) $(BASE)
 	"$(ARMIPS)" -erroronwarning -stat -sym "$(SYMBOLS)" main_official.s
 
 $(RELEASE_IPS): $(PATCHED)
