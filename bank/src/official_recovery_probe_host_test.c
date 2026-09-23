@@ -1,6 +1,10 @@
 #include <assert.h>
 #include "official_recovery_probe.h"
 
+/* Deliberately declared here first so the test goes RED until the core contract is implemented. */
+int OfficialRecovery_BuildRollbackRecord(const OfficialRecoveryRecord *server,
+    OfficialRecoveryRecord *gameOut);
+
 static OfficialRecoveryRecord rec(unsigned long long id,unsigned version,unsigned status)
 {
     OfficialRecoveryRecord r={0};
@@ -52,6 +56,28 @@ int main(void)
     d=OfficialRecovery_Classify(game.dataId,7,&local,&game);
     assert(d.action==OFFICIAL_RECOVERY_COMMIT);
     assert(d.source==OFFICIAL_RECOVERY_SOURCE_GAME);
+
+    {
+        OfficialRecoveryRecord server={0}, rebuilt={0};
+        server.dataId=0xABCDEF0123456789ULL;
+        server.transactionPassword=0x1020304050607080ULL;
+        server.curVersion=41;
+        server.updateVersion=42;
+        server.size=0xBB518u;
+        server.status=2; /* server status is not copied; repair deliberately requests rollback */
+
+        assert(OfficialRecovery_BuildRollbackRecord(&server,&rebuilt)==1);
+        assert(rebuilt.dataId==server.dataId);
+        assert(rebuilt.transactionPassword==server.transactionPassword);
+        assert(rebuilt.curVersion==server.curVersion);
+        assert(rebuilt.updateVersion==server.updateVersion);
+        assert(rebuilt.size==server.size);
+        assert(rebuilt.status==1u);
+        assert(OfficialRecovery_RecordMatchesServer(&rebuilt,server.dataId,server.curVersion));
+
+        assert(OfficialRecovery_BuildRollbackRecord(0,&rebuilt)==0);
+        assert(OfficialRecovery_BuildRollbackRecord(&server,0)==0);
+    }
 
     return 0;
 }
