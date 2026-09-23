@@ -2,6 +2,28 @@
 
 本目录包含 Pokémon Bank v1.5 文件格式、事务、Route A Bulk Import、Official Bulk Sync 与实机验证相关文档。
 
+## Official Bulk Sync 异常保存 / Recovery 研究
+
+> 研究分支：`feature/official-bank-recovery-research`，由 `feature/official-bank-bulk-sync` 派生。
+
+- **[Trainer mismatch / 异常事务恢复研究](official-bank-recovery-research.zh-cn.md)**：解释网络保存失败后，同一份未恢复存档仍可能被判“不一致”的根因；记录当前已闭环结论与开发边界。
+- **[Recovery 地址图与事务记录结构](official-bank-recovery-address-map.zh-cn.md)**：`0x002B1CF8 / 0x002A93F4 / 0x002A8760 / 0x002A8D30` 完整数据流，Game/Local recovery record 布局，`dataId + curVersion` mismatch gate，以及 Commit/Rollback 选择逻辑。
+- **[Recovery 实机故障注入矩阵](official-bank-recovery-test-matrix.zh-cn.md)**：Prepare 前、Upload、Game Save、Local Save、Complete/Rollback 等窗口的实验方法与 SERVER/LOCAL/GAME 三方记录采集要求。
+
+当前最重要的新结论：state 18 的 blocking predicate 不是普通 Trainer ID/OT 比较，而是 server pending `BankTransactionParam` 与 Local/Game recovery record 的 `dataId + curVersion` 一致性校验；UI 中显示的 Trainer Name/ID 来自额外 metadata 查询，用于提示上一次关联对象。
+
+研究分支还新增：
+
+```text
+bank/tools/extract_recovery_chain.py
+bank/tools/recovery_targets.txt
+bank/src/official_recovery_probe_core.c
+bank/src/official_recovery_probe_host_test.c
+.github/workflows/official-bank-recovery-research-ci.yml
+```
+
+其中 recovery probe 目前只是 host-testable 的 stock 事务判定模型，不改变实机 Bank 行为。机器码级实验 Hook 必须在取得并校验 stock `.code` 后单独生成，不能根据 Ghidra 伪代码猜 CMP/BNE 地址。
+
 ## Official Bulk Sync（当前 feature 分支）
 
 - **[Official Bulk Sync V3 使用文档](official-bank-bulk-sync-usage-v3.zh-cn.md)**：安装、`bulk_import.bin`、自动 fresh backup、H0 / H1-preview / 1 Pokémon server round-trip、HOME 隔离验证、回退与常见问题。
@@ -67,6 +89,10 @@ research/saveboxes-transaction-analysis
 feature/official-bank-bulk-sync
     └─ 基于 research 成果的 official-only 联网实现
        不再依赖用户可见 Offline / Download Mode
+
+feature/official-bank-recovery-research
+    └─ 从 official-bank-bulk-sync 派生
+       专门研究网络异常后的 transaction recovery / Trainer mismatch
 ```
 
-旧 Preview 与 official-only 版是两个不同验证阶段；不要把 Offline Preview 已验证的“本地 save/reload”直接等同于 official server round-trip。
+旧 Preview、official-only 版与 recovery research 是不同验证阶段；不要把 Offline Preview 已验证的“本地 save/reload”直接等同于 official server round-trip，也不要把 recovery 实验 Hook 混入正常 V3 发布包。
