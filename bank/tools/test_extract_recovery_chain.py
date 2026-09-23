@@ -1,6 +1,12 @@
 import unittest
 
-from extract_recovery_chain import direct_callees, normalize_address, parse_functions, render_report
+from extract_recovery_chain import (
+    direct_callees,
+    normalize_address,
+    parse_functions,
+    render_report,
+    resolve_target,
+)
 
 SAMPLE = r'''/* Ghidra headless pseudocode export. */
 /* #10 @ 002af034 : FUN_002af034 */
@@ -43,6 +49,12 @@ class RecoveryExtractorTests(unittest.TestCase):
     def test_direct_callees_are_unique_ordered_and_exclude_self(self):
         funcs = parse_functions(SAMPLE)
         self.assertEqual(direct_callees(funcs['002af034']), ['00111111', '00222222'])
+
+    def test_resolve_target_maps_interior_address_to_containing_function(self):
+        funcs = parse_functions(SAMPLE)
+        resolved = resolve_target(funcs, '002af038')
+        self.assertIsNotNone(resolved)
+        self.assertEqual(resolved.address, '002af034')
 
     def test_render_report_marks_missing_targets(self):
         funcs = parse_functions(SAMPLE)
