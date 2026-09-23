@@ -4,37 +4,51 @@
 
 .include "../include/symbol.inc"
 
-// Official-only bulk sync. Keep every executable byte inside the real RX text
-// tail padding. No .data/BSS region is repurposed as code or scratch storage.
+// Official Bulk Sync + recovery-A transaction hardening. Every added
+// executable byte remains inside the verified RX text tail; hook sites only
+// replace instructions verified against the exact Bank v1.5 image.
 .definelabel OfficialBulk_CodeStart, TextActualEnd
 .definelabel OfficialBulk_CodeEnd,   TextMappedEnd
 
-// Recovery A save-state landmarks verified against Bank v1.5.
-.definelabel RecoveryA_SaveCase1,          0x002B1DE4
-.definelabel RecoveryA_SaveCase5Status,    0x002B1F50
-.definelabel RecoveryA_SaveCase7,          0x002B1FF8
-.definelabel RecoveryA_SaveCase8Result,    0x002B2090
-.definelabel RecoveryA_SaveSetSubstate,    0x002B2174
-
-.definelabel RecoveryA_JournalSaving,       7
-.definelabel RecoveryA_JournalReady,        8
+.definelabel RecoveryA_SaveCase1,               0x002B1DE4
+.definelabel RecoveryA_SaveCase7Status,         0x002B1FFC
+.definelabel RecoveryA_SaveCase8Result,         0x002B2090
+.definelabel RecoveryA_LocalStatusCmp2,          0x002A8974
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
 
+// Existing Official Bulk Sync V3 hook.
 .org BankDataSyncState_Update
     b OfficialBulk_BankDataSyncDispatch
 
-// Pre-RMC52 durable rollback journal.
+// -----------------------------------------------------------------------------
+// Recovery A: bulk-only durable pre-RMC52 WAL
+// -----------------------------------------------------------------------------
+// Replaces stock `mov r0,r4`. The helper returns r0=r4 for ordinary saves and
+// for the second journal pass, so the untouched BL at 0x002B1DE8 starts the
+// native SerializeAndStage call exactly once.
 .org RecoveryA_SaveCase1
-    b OfficialRecovery_A_PreStageJournal
+    blx OfficialRecovery_WalCase1
 
-// Keep local recovery rollback-only even after the game save succeeds.
-.org RecoveryA_SaveCase5Status
-    mov r1,#1
+// Stock case7 writes status=1. Only the private pre-Stage journal pass selects
+// status=3; ordinary game-save rollback records stay native status=1.
+.org RecoveryA_SaveCase7Status
+    blx OfficialRecovery_WalSelectStatus
 
+// During the private journal pass the helper routes success back to case1 and
+// failure to state20. Ordinary case8 returns with stock CMP flags intact.
 .org RecoveryA_SaveCase8Result
-    b OfficialRecovery_A_AfterJournalPersist
+    blx OfficialRecovery_WalCase8Result
 
+// Stock already handled local status=1 before this instruction. Replace only
+// the status=2 CMP: private status=3 performs the full ownership check and, if
+// exact, selects stock Rollback state6. Ordinary status=2 returns with EQ set.
+.org RecoveryA_LocalStatusCmp2
+    blx OfficialRecovery_WalLocalStatusA
+
+// -----------------------------------------------------------------------------
+// RX-tail payload
+// -----------------------------------------------------------------------------
 .org OfficialBulk_CodeStart
 .area OfficialBulk_CodeEnd-OfficialBulk_CodeStart
 .arm
@@ -50,37 +64,8 @@ OfficialBulk_BankDataSyncDispatch:
     b BankDataSyncState_Update + 4
     .pool
 
-// First pass: route through stock case7/case8 and durably store exact tx as
-// status=1. Second pass: clear the private marker before starting RMC52.
-OfficialRecovery_A_PreStageJournal:
-    ldrb r1,[r4,#0x48]
-    cmp r1,#RecoveryA_JournalReady
-    movne r1,#RecoveryA_JournalSaving
-    strneb r1,[r4,#0x48]
-    movne r0,#7
-    bne RecoveryA_SaveSetSubstate
-    mov r1,#0
-    strb r1,[r4,#0x48]
-    mov r0,r4
-    bl BankSave_SerializeAndStage
-    b RecoveryA_SaveCase1 + 8
-
-OfficialRecovery_A_AfterJournalPersist:
-    ldrb r1,[r4,#0x48]
-    cmp r1,#RecoveryA_JournalSaving
-    bne @@stockCase8
-    cmp r0,#1
-    moveq r1,#RecoveryA_JournalReady
-    movne r1,#0
-    strb r1,[r4,#0x48]
-    moveq r0,#1
-    movne r0,#20
-    b RecoveryA_SaveSetSubstate
-@@stockCase8:
-    cmp r0,#1
-    b RecoveryA_SaveCase8Result + 4
-
 .align 2
+    .importobj "../build/official_recovery_wal_thumb.o"
     .importobj "../build/official_bulk_sync_prod.o"
 .endarea
 
