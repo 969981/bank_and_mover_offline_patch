@@ -5,6 +5,7 @@ BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
 TAIL_START = 0x00313910
 TAIL_END = 0x00314000
+RECOVERY_SESSION_FLAG = 0x003ABFFC
 
 ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
@@ -81,6 +82,8 @@ def main():
     assert hashlib.sha256(base).hexdigest()==BASE_SHA256, "unexpected Bank v1.5 base SHA-256"
     assert len(base)==len(patched)==0x2AC000, "patched .code size changed"
     assert not any(addr_slice(base,TAIL_START,TAIL_END)), "verified RX tail is not zero in stock image"
+    assert addr_slice(base,RECOVERY_SESSION_FLAG,RECOVERY_SESSION_FLAG+4)==b"\0\0\0\0", \
+        "recovery session scratch is not zero in stock Bank v1.5"
 
     changed=0
     for i,(a,b) in enumerate(zip(base,patched)):
