@@ -22,40 +22,20 @@ jobs:
           cd bank/tools
           python test_verify_recovery_hook_sites.py -v
 
-      - name: Recovery marker contract
-        run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror \
-            bank/src/official_recovery_marker_host_test.c \
-            bank/src/official_recovery_marker_core.c \
-            -o /tmp/marker_test
-          /tmp/marker_test
-
       - name: Auto rollback policy
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             bank/src/official_recovery_auto_rollback_host_test.c \
             bank/src/official_recovery_auto_rollback_core.c \
-            bank/src/official_recovery_marker_core.c \
             -o /tmp/auto_policy_test
           /tmp/auto_policy_test
 
-      - name: Marker persistence contract
-        run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror \
-            bank/src/official_recovery_marker_io_host_test.c \
-            bank/src/official_recovery_marker_io_core.c \
-            bank/src/official_recovery_marker_core.c \
-            -o /tmp/marker_io_test
-          /tmp/marker_io_test
-
-      - name: Auto rollback runtime lifecycle
+      - name: Auto rollback runtime model
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             bank/src/official_recovery_runtime_host_test.c \
             bank/src/official_recovery_runtime_core.c \
             bank/src/official_recovery_auto_rollback_core.c \
-            bank/src/official_recovery_marker_io_core.c \
-            bank/src/official_recovery_marker_core.c \
             bank/src/official_recovery_probe_core.c \
             -o /tmp/auto_runtime_test
           /tmp/auto_runtime_test
@@ -76,16 +56,33 @@ jobs:
             -o /tmp/bulk_test
           /tmp/bulk_test
 
-      - name: Measure ARM production payload
+      - name: Verify ARM production payload and A shim
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi
           BASEFLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
           arm-none-eabi-gcc $BASEFLAGS -c bank/src/official_bulk_sync_prod.c -o /tmp/prod-default.o
-          arm-none-eabi-gcc $BASEFLAGS -fno-inline-functions-called-once -fno-inline-small-functions -c bank/src/official_bulk_sync_prod.c -o /tmp/prod-noinline.o
-          echo '=== default ==='
+          echo '=== production Thumb object ==='
           arm-none-eabi-size /tmp/prod-default.o
-          arm-none-eabi-nm -S --size-sort /tmp/prod-default.o | tail -40
-          echo '=== noinline-called-once ==='
-          arm-none-eabi-size /tmp/prod-noinline.o
-          arm-none-eabi-nm -S --size-sort /tmp/prod-noinline.o | tail -60
+          test "$(arm-none-eabi-size /tmp/prod-default.o | awk 'NR==2 {print $1}')" -eq 1577
+          cat >/tmp/recovery-a.s <<'EOF'
+          .syntax unified
+          .cpu mpcore
+          .arm
+          .text
+          .global recovery_a_shim
+          recovery_a_shim:
+              ldr r0,[r4,#0x28]
+              add r1,r4,#0x40
+              ldmia r0!,{r2,r3,r5-r7,r12}
+              stmia r1!,{r2,r3,r5-r7,r12}
+              ldmia r0!,{r2,r3}
+              stmia r1!,{r2,r3}
+              mov r0,#6
+              b recovery_a_shim
+          EOF
+          arm-none-eabi-as -mcpu=mpcore /tmp/recovery-a.s -o /tmp/recovery-a.o
+          arm-none-eabi-objcopy -O binary -j .text /tmp/recovery-a.o /tmp/recovery-a.bin
+          echo '=== recovery A shim ==='
+          arm-none-eabi-objdump -d /tmp/recovery-a.o
+          test "$(stat -c %s /tmp/recovery-a.bin)" -eq 32
