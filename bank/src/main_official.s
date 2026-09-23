@@ -11,6 +11,7 @@
 .definelabel OfficialBulk_CodeEnd,   TextMappedEnd
 
 .definelabel RecoveryA_SaveCase1,               0x002B1DE4
+.definelabel RecoveryA_SaveCase5Status,         0x002B1F50
 .definelabel RecoveryA_SaveCase8Result,         0x002B2090
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
@@ -25,20 +26,26 @@
 // Replaces stock `mov r0,r4`. For an ordinary save the helper simply restores
 // r0=r4. For a Bulk session it first routes through stock case7, which persists
 // the exact BankTransactionParam with native status=1 before any RMC52 request.
-// On the second pass the helper disarms the transient Bulk flag and returns
-// r0=r4, so the untouched BL at 0x002B1DE8 starts SerializeAndStage once.
+// The transient Bulk flag remains armed through Stage/game-save so case5 can
+// keep the local recovery record rollback-only.
 .org RecoveryA_SaveCase1
     blx OfficialRecovery_WalCase1
 
+// Stock case5 writes status=2 after game-save success. Variant A must never
+// upgrade an interrupted Bulk transaction to Commit, so select status=1 only
+// while the Bulk session flag is armed; ordinary saves still get stock status=2.
+.org RecoveryA_SaveCase5Status
+    blx OfficialRecovery_WalCase5Status
+
 // During the private pre-Stage journal pass the helper routes local-save
-// success back to case1 and failure to state20. Ordinary case8 returns with the
-// original CMP flags expected by stock MOVEQ/BEQ at 0x002B2094/0x002B2098.
+// success back to case1 and failure to state20. Later case7 rollback saves also
+// pass through this hook, which safely clears any surviving Bulk session flag.
 .org RecoveryA_SaveCase8Result
     blx OfficialRecovery_WalCase8Result
 
-// No state18 hook is needed in Variant A. The durable record is native
-// status=1, so stock state18 already performs exact dataId/curVersion matching
-// and selects the native Rollback path.
+// No state18 hook is needed in Variant A. Every durable Bulk recovery record
+// stays native status=1, so stock state18 performs its normal exact match and
+// selects the native Rollback path.
 
 // -----------------------------------------------------------------------------
 // RX-tail payload
