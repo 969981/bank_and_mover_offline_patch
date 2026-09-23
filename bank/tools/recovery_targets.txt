@@ -1,4 +1,5 @@
 # Bank outer/recovery/save states
+002A5580  # outer flow: state result -> next state
 002ACBDC  # state 8: remote record / transaction query
 002AF034  # state 11: transaction recovery selection
 002A93F4  # state 17: other-side recovery / retry
