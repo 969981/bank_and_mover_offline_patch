@@ -14,8 +14,7 @@ COMMON = {
     "bulk_state16_entry": (0x002AF460, bytes.fromhex("70 40 2d e9")),
     "save_case1_prejournal_entry": (0x002B1DE4, bytes.fromhex("04 00 a0 e1")),
     "save_case7_status_immediate": (0x002B1FFC, bytes.fromhex("01 10 a0 e3")),
-    "save_case8_success_move": (0x002B2094, bytes.fromhex("0b 00 a0 03")),
-    "state18_local_status2_cmp": (0x002A8974, bytes.fromhex("02 00 50 e3")),
+    "save_case8_result_cmp": (0x002B2090, bytes.fromhex("01 00 50 e3")),
     "save_stage_tx_load": (0x002B2494, bytes.fromhex("28 30 94 e5")),
     "save_stage_call": (0x002B24A0, bytes.fromhex("17 c0 ff eb")),
 }
@@ -23,7 +22,19 @@ COMMON = {
 AUTO = {}
 
 SMART = {
-    "state18_game_mismatch_funnel": (0x002A8AD0, bytes.fromhex("08 00 a0 e3")),
+    # Stock has already matched local dataId+curVersion and loaded status in r0.
+    "state18_local_status_decision": (0x002A8968, bytes.fromhex("01 00 50 e3")),
+    # Hook only the genuine current-game transaction mismatch branches.
+    "state18_game_dataid_mismatch_bne": (0x002A89D0, bytes.fromhex("3e 00 00 1a")),
+    "state18_game_curversion_mismatch_bne": (0x002A89E0, bytes.fromhex("3a 00 00 1a")),
+    # Reused in-place decision block; do not consume scarce RX-tail bytes.
+    "state18_game_mismatch_decision_block": (
+        0x002A8A64,
+        bytes.fromhex(
+            "00 20 a0 e3 02 10 a0 e1 02 00 a0 e1 00 00 a0 e1 "
+            "08 00 a0 e3 00 f0 20 e3"
+        ),
+    ),
 }
 
 
