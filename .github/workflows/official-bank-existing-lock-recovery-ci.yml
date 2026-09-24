@@ -36,6 +36,9 @@ jobs:
             -o /tmp/bulk-test
           /tmp/bulk-test
 
+      - name: Static verifier syntax
+        run: python -m py_compile bank/src/verify_official_bulk_sync.py
+
       - name: Compile Recovery C production objects and enforce RX-tail budget
         run: |
           sudo apt-get update -qq
@@ -94,7 +97,7 @@ jobs:
           if (-not (Test-Path $patched)) { throw 'armips did not create patched image' }
           if ((Get-Item $patched).Length -ne 0x2AC000) { throw 'patched image size changed' }
 
-      - name: Verify linked Recovery C symbols and hooks
+      - name: Verify linked Recovery C symbols and branch targets
         shell: pwsh
         run: |
           $text = Get-Content bank/build/official-armips-symbols-smoke.txt -Raw
@@ -106,11 +109,25 @@ jobs:
             if ($text -notmatch [regex]::Escape($name)) { throw "missing symbol: $name" }
           }
 
+          $match = [regex]::Match($text, '(?im)^([0-9A-Fa-f]{8})\s+officialexistinglock_gamemismatch\s*$')
+          if (-not $match.Success) { throw 'cannot resolve OfficialExistingLock_GameMismatch' }
+          $helper = [Convert]::ToInt64($match.Groups[1].Value,16)
+
           $bytes = [System.IO.File]::ReadAllBytes('bank/build/00040000000C9B00.dec.code')
-          foreach ($va in @(0x002AF460,0x002A89D0,0x002A89E0)) {
+          $bulkOff = 0x002AF460 - 0x00100000
+          if ([BitConverter]::ToUInt32($bytes,$bulkOff) -eq 0) { throw 'BankDataSync hook remained zero' }
+
+          foreach ($va in @(0x002A89D0,0x002A89E0)) {
             $off = $va - 0x00100000
-            if ([BitConverter]::ToUInt32($bytes,$off) -eq 0) {
-              throw ('hook site remained zero at 0x{0:X8}' -f $va)
+            $word = [BitConverter]::ToUInt32($bytes,$off)
+            if (($word -band 0xFF000000) -ne 0x1A000000) {
+              throw ('expected ARM BNE at 0x{0:X8}, got 0x{1:X8}' -f $va,$word)
+            }
+            $imm = [int64]($word -band 0x00FFFFFF)
+            if (($imm -band 0x00800000) -ne 0) { $imm -= 0x01000000 }
+            $target = [int64]$va + 8 + ($imm * 4)
+            if ($target -ne $helper) {
+              throw ('BNE target mismatch at 0x{0:X8}: target=0x{1:X8} helper=0x{2:X8}' -f $va,$target,$helper)
             }
           }
 
