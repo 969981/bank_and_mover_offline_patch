@@ -1,0 +1,123 @@
+name: official-bank-existing-lock-recovery-ci
+
+on:
+  push:
+    branches:
+      - feature/official-bank-existing-lock-recovery
+  workflow_dispatch:
+
+jobs:
+  host-and-budget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Recovery C host regression
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_existing_lock_recovery_host_test.c \
+            bank/src/official_existing_lock_recovery_core.c \
+            -o /tmp/recovery-c-test
+          /tmp/recovery-c-test
+
+      - name: Existing stock recovery model regression
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_recovery_probe_host_test.c \
+            bank/src/official_recovery_probe_core.c \
+            -o /tmp/probe-test
+          /tmp/probe-test
+
+      - name: Existing bulk sync regression
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            bank/src/official_bulk_sync_host_test.c \
+            bank/src/official_bulk_sync_core.c \
+            -o /tmp/bulk-test
+          /tmp/bulk-test
+
+      - name: Compile Recovery C production objects and enforce RX-tail budget
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi
+          mkdir -p bank/build
+          FLAGS='-std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft -ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common -ffunction-sections -fdata-sections -Wall -Wextra -Werror'
+          arm-none-eabi-gcc $FLAGS -c bank/src/official_bulk_sync_prod.c -o bank/build/official_bulk_sync_prod.o
+          arm-none-eabi-as -mcpu=mpcore bank/src/official_existing_lock_recovery_arm.s -o bank/build/official_existing_lock_recovery_arm.o
+
+          arm-none-eabi-objcopy -O binary -j .text \
+            bank/build/official_existing_lock_recovery_arm.o \
+            /tmp/recovery-c.bin
+          PROD_SIZE=$(arm-none-eabi-size bank/build/official_bulk_sync_prod.o | awk 'NR==2 {print $1}')
+          C_SIZE=$(stat -c %s /tmp/recovery-c.bin)
+          TOTAL=$((PROD_SIZE + 36 + C_SIZE))
+          echo "RX tail budget: bulk=${PROD_SIZE} dispatcher=36 recovery_c=${C_SIZE} total=${TOTAL}/1776"
+          test "$TOTAL" -le 1776
+
+          echo '=== Recovery C ARM shim ==='
+          arm-none-eabi-objdump -d bank/build/official_existing_lock_recovery_arm.o
+          test -z "$(arm-none-eabi-nm -u bank/build/official_existing_lock_recovery_arm.o)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovery-c-production-objects
+          path: |
+            bank/build/official_bulk_sync_prod.o
+            bank/build/official_existing_lock_recovery_arm.o
+          if-no-files-found: error
+
+  armips-smoke:
+    needs: host-and-budget
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: recovery-c-production-objects
+          path: bank/build
+
+      - name: Prepare synthetic verified-layout baseline
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force bank/rom/exefs | Out-Null
+          $path = 'bank/rom/exefs/00040000000C9B00.dec.code'
+          $fs = [System.IO.File]::Open($path, [System.IO.FileMode]::Create)
+          try { $fs.SetLength(0x2AC000) } finally { $fs.Dispose() }
+
+      - name: Assemble production main_official.s with armips
+        shell: pwsh
+        working-directory: bank/src
+        run: |
+          ../tools/armips/armips.exe -erroronwarning -stat -sym ../build/official-armips-symbols-smoke.txt main_official.s
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $patched = '../build/00040000000C9B00.dec.code'
+          if (-not (Test-Path $patched)) { throw 'armips did not create patched image' }
+          if ((Get-Item $patched).Length -ne 0x2AC000) { throw 'patched image size changed' }
+
+      - name: Verify linked Recovery C symbols and hooks
+        shell: pwsh
+        run: |
+          $text = Get-Content bank/build/official-armips-symbols-smoke.txt -Raw
+          foreach ($name in @(
+            'OfficialBulk_BankDataSyncDispatch',
+            'OfficialExistingLock_GameMismatch',
+            'OfficialBulkSync_Process'
+          )) {
+            if ($text -notmatch [regex]::Escape($name)) { throw "missing symbol: $name" }
+          }
+
+          $bytes = [System.IO.File]::ReadAllBytes('bank/build/00040000000C9B00.dec.code')
+          foreach ($va in @(0x002AF460,0x002A89D0,0x002A89E0)) {
+            $off = $va - 0x00100000
+            if ([BitConverter]::ToUInt32($bytes,$off) -eq 0) {
+              throw ('hook site remained zero at 0x{0:X8}' -f $va)
+            }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovery-c-linked-template
+          path: |
+            bank/build/00040000000C9B00.dec.code
+            bank/build/official-armips-symbols-smoke.txt
+          if-no-files-found: error
