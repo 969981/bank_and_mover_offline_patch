@@ -42,8 +42,11 @@ int main(void)
         OfficialExistingLockGameRecord second={0};
         d=OfficialExistingLock_PrepareGameRollback(1,&server,&second);
         assert(d==OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_ROLLBACK);
-        assert(second.dataId==out.dataId || second.dataId==server.dataId);
+        assert(second.dataId==server.dataId);
         assert(second.transactionPassword==server.transactionPassword);
+        assert(second.curVersion==server.curVersion);
+        assert(second.updateVersion==server.updateVersion);
+        assert(second.size==server.size);
         assert(second.status==1u);
     }
 
