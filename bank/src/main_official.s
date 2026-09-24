@@ -4,16 +4,28 @@
 
 .include "../include/symbol.inc"
 
-// Official-only bulk sync. Keep every executable byte inside the real RX text
-// tail padding. No .data/BSS region is repurposed as code or scratch storage.
+// Official Bulk Sync + Recovery C (Existing Lock Recovery).
+// Keep every executable byte inside the verified RX text tail. Recovery C
+// replaces only the two genuine state18 game-transaction mismatch branches.
 .definelabel OfficialBulk_CodeStart, TextActualEnd
 .definelabel OfficialBulk_CodeEnd,   TextMappedEnd
+
+.definelabel RecoveryC_GameDataIdMismatch,      0x002A89D0
+.definelabel RecoveryC_GameVersionMismatch,     0x002A89E0
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
 
 // Run before the stock state machine consumes its native callback status byte.
 .org BankDataSyncState_Update
     b OfficialBulk_BankDataSyncDispatch
+
+// Recovery C activates only on the two actual current-game transaction
+// mismatch edges. Invalid-status paths and all ordinary matching recovery
+// records retain stock behavior.
+.org RecoveryC_GameDataIdMismatch
+    bne OfficialExistingLock_GameMismatch
+.org RecoveryC_GameVersionMismatch
+    bne OfficialExistingLock_GameMismatch
 
 .org OfficialBulk_CodeStart
 .area OfficialBulk_CodeEnd-OfficialBulk_CodeStart
@@ -39,6 +51,8 @@ OfficialBulk_BankDataSyncDispatch:
     b BankDataSyncState_Update + 4
     .pool
 
+.align 2
+    .importobj "../build/official_existing_lock_recovery_arm.o"
 .align 2
     .importobj "../build/official_bulk_sync_prod.o"
 .endarea
