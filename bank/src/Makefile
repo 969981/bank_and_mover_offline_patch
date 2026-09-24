@@ -19,9 +19,11 @@ RELEASE_ROOT := $(TARGET_ROOT)/../release
 RELEASE_TITLE := $(RELEASE_ROOT)/$(TITLE_ID)
 RELEASE_IPS := $(RELEASE_TITLE)/code.ips
 PROD_OBJECT := $(BUILD)/official_bulk_sync_prod.o
+RECOVERY_C_OBJECT := $(BUILD)/official_existing_lock_recovery_arm.o
 SYMBOLS := $(BUILD)/official-armips-symbols.txt
 
 CC := $(DEVKITARM)/bin/arm-none-eabi-gcc
+AS := $(DEVKITARM)/bin/arm-none-eabi-as
 CFLAGS := -std=c11 -Os -march=armv6k -mtune=mpcore -mthumb -mfloat-abi=soft \
 	-ffreestanding -fno-builtin -fno-stack-protector -fno-unwind-tables \
 	-fno-asynchronous-unwind-tables -fomit-frame-pointer -fno-common \
@@ -35,7 +37,10 @@ $(BUILD):
 $(PROD_OBJECT): official_bulk_sync_prod.c official_bulk_sync.c official_bulk_sync_core.c official_bulk_sync.h | $(BUILD)
 	"$(CC)" $(CFLAGS) -c "$<" -o "$@"
 
-$(PATCHED): FORCE main_official.s $(PROD_OBJECT) $(BASE)
+$(RECOVERY_C_OBJECT): official_existing_lock_recovery_arm.s | $(BUILD)
+	"$(AS)" -mcpu=mpcore "$<" -o "$@"
+
+$(PATCHED): FORCE main_official.s $(PROD_OBJECT) $(RECOVERY_C_OBJECT) $(BASE)
 	"$(ARMIPS)" -erroronwarning -stat -sym "$(SYMBOLS)" main_official.s
 
 $(RELEASE_IPS): $(PATCHED)
@@ -43,9 +48,11 @@ $(RELEASE_IPS): $(PATCHED)
 	rm -f "$@"
 	"$(IPS_TOOL)" --create --ips "$(BASE)" "$(PATCHED)" "$@"
 
-host-test:
+host-test: | $(BUILD)
 	$(CC_FOR_BUILD) -std=c11 -O2 -Wall -Wextra -Werror official_bulk_sync_host_test.c official_bulk_sync_core.c -o "$(BUILD)/official_bulk_sync_host_test"
 	"$(BUILD)/official_bulk_sync_host_test"
+	$(CC_FOR_BUILD) -std=c11 -O2 -Wall -Wextra -Werror official_existing_lock_recovery_host_test.c official_existing_lock_recovery_core.c -o "$(BUILD)/official_existing_lock_recovery_host_test"
+	"$(BUILD)/official_existing_lock_recovery_host_test"
 
 verify: $(PATCHED) $(RELEASE_IPS) verify_official_bulk_sync.py
 	"$(PYTHON)" verify_official_bulk_sync.py --base "$(BASE)" --patched "$(PATCHED)" --symbols "$(SYMBOLS)" --ips "$(RELEASE_IPS)"
