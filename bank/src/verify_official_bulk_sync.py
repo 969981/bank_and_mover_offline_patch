@@ -3,21 +3,40 @@ import argparse, hashlib, pathlib
 
 BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
+TAIL_START = 0x00313910
+TAIL_END = 0x00314000
+
 ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
-    (0x00313910,0x00314000,"official RX text-tail payload"),
+    (0x002A89D0,0x002A89D4,"Recovery C dataId mismatch edge"),
+    (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch edge"),
+    (TAIL_START,TAIL_END,"official RX text-tail payload"),
 ]
-CAVES = [(0x00313910,0x00314000)]
-EXPECTED_SYMBOLS = {
-    "officialbulk_bankdatasyncdispatch":0x00313910,
-    "officialbulksync_process":0x003139D4,
+CAVES = [(TAIL_START,TAIL_END)]
+REQUIRED_CHANGED = [
+    (0x002AF460,0x002AF464,"BankDataSyncState_Update"),
+    (0x002A89D0,0x002A89D4,"Recovery C dataId mismatch"),
+    (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch"),
+]
+STOCK_HOOK_BYTES = {
+    (0x002A89D0,0x002A89D4): bytes.fromhex("3e00001a"),
+    (0x002A89E0,0x002A89E4): bytes.fromhex("3a00001a"),
+}
+EXPECTED_TAIL_SYMBOLS = {
+    "officialbulk_bankdatasyncdispatch",
+    "officialexistinglock_gamemismatch",
+    "officialbulksync_process",
 }
 FORBIDDEN_SYMBOLS = {
     "officialbulk_commandbuffer",
+    "officialrecovery_walcase1",
+    "officialrecovery_wallocalstatusb",
 }
+
 
 def addr_slice(data,start,end):
     return data[start-CODE_BASE:end-CODE_BASE]
+
 
 def read_symbols(path):
     out={}
@@ -27,6 +46,7 @@ def read_symbols(path):
             try: out[parts[1].lower()]=int(parts[0],16)
             except ValueError: pass
     return out
+
 
 def apply_ips(base,patch):
     if not patch.startswith(b"PATCH") or not patch.endswith(b"EOF"):
@@ -46,6 +66,7 @@ def apply_ips(base,patch):
         out[off:end]=data
     return bytes(out)
 
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--base",required=True); ap.add_argument("--patched",required=True)
@@ -53,24 +74,39 @@ def main():
     args=ap.parse_args()
     base=pathlib.Path(args.base).read_bytes(); patched=pathlib.Path(args.patched).read_bytes()
     ips=pathlib.Path(args.ips).read_bytes()
+
     assert hashlib.sha256(base).hexdigest()==BASE_SHA256, "unexpected Bank v1.5 base SHA-256"
-    assert len(base)==len(patched), "patched .code size changed"
+    assert len(base)==len(patched)==0x2AC000, "patched .code size changed"
     for start,end in CAVES:
         assert not any(addr_slice(base,start,end)), f"base cave {start:08X}-{end:08X} is not zero"
+    for (start,end),expected in STOCK_HOOK_BYTES.items():
+        assert addr_slice(base,start,end)==expected, f"unexpected stock hook bytes at {start:08X}"
+
+    changed=0
     for i,(a,b) in enumerate(zip(base,patched)):
         if a==b: continue
+        changed+=1
         addr=CODE_BASE+i
         assert any(s<=addr<e for s,e,_ in ALLOWED), f"unexpected patched byte at {addr:08X}"
-    assert addr_slice(base,0x002AF460,0x002AF464)!=addr_slice(patched,0x002AF460,0x002AF464)
+    assert changed, "patch produced no changes"
+
+    for start,end,name in REQUIRED_CHANGED:
+        assert addr_slice(base,start,end)!=addr_slice(patched,start,end), f"required hook not changed: {name}"
     assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
-        "official-only patch must not modify mapped data/BSS image"
+        "Recovery C must not modify mapped data/BSS image"
+
     syms=read_symbols(args.symbols)
-    for name,addr in EXPECTED_SYMBOLS.items():
-        assert syms.get(name)==addr, f"symbol {name} expected {addr:08X}, got {syms.get(name)}"
+    assert syms.get("officialbulk_bankdatasyncdispatch")==TAIL_START, "dispatcher moved from RX-tail start"
+    for name in EXPECTED_TAIL_SYMBOLS:
+        assert name in syms, f"missing symbol {name}"
+        addr=syms[name] & ~1
+        assert TAIL_START<=addr<TAIL_END, f"symbol {name} escaped RX tail: {syms[name]:08X}"
     for name in FORBIDDEN_SYMBOLS:
-        assert name not in syms, f"forbidden cross-ISA helper symbol present: {name}"
+        assert name not in syms, f"forbidden Recovery C symbol present: {name}"
+
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
-    print("official bulk sync static verification passed")
+    print(f"official bulk sync + Recovery C verification passed; changed_bytes={changed}")
+
 
 if __name__=="__main__": main()
