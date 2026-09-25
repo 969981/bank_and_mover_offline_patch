@@ -13,11 +13,12 @@
 //   r0        = current GameRecoveryRecord *
 //   [r4+0x28] = current server BankTransactionParam *
 //
-// We rebuild the in-memory game recovery record as status=1 and mirror the
-// current server transaction into state18's canonical context.  state18 is
-// then completed through stock case11/result4 so stock state17 performs the
-// single RollbackBankObject call, clears transactionPassword, and saves the
-// game through the stock family-specific writer.
+// We rebuild the in-memory game recovery record with transient status=3 and
+// mirror the current server transaction into state18's canonical context.
+// status=3 is never intended to reach disk: the state17 hook consumes it,
+// restores stock rollback status=1, and records a state17-local result marker.
+// state17 then performs the single stock RollbackBankObject call, clears
+// transactionPassword and saves the game through the stock family writer.
 
 .equ State18StoreSubstate, 0x002A8980
 
@@ -48,9 +49,10 @@ OfficialExistingLock_GameMismatch:
     ldr r2,[r1,#0x10]
     str r2,[r0,#0x18]
 
-    // C is rollback-only.  Mark as a synthetic game-source context so the
-    // following stock state17 path cannot reinterpret stale status=2 data.
-    mov r2,#1
+    // 3 is Recovery-C-only.  For state18 source selection any non-zero value
+    // retains the stock "game source" behavior, while state17 can distinguish
+    // this synthetic record from ordinary persisted status=1 Rollback records.
+    mov r2,#3
     strb r2,[r0,#0x1c]
     strb r2,[r4,#0x88]
 
@@ -64,9 +66,7 @@ OfficialExistingLock_GameMismatch:
     ldmia r1!,{r2,r12}
     stmia r3!,{r2,r12}
 
-    // Stock state18 case11 sets result=4.  The outer flow then enters state17,
-    // which sees the synthetic status=1 record, performs one stock Rollback,
-    // clears the password and persists normal game-side cleanup.
+    // Stock state18 case11 sets result=4.  The outer flow then enters state17.
     mov r0,#11
     b .Lset_substate
 
