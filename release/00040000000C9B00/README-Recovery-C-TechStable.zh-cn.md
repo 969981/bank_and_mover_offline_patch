@@ -1,4 +1,4 @@
-# Pokémon Bank Recovery C — TechStable r3 / 方案 C
+# Pokémon Bank Recovery C4 — Persistent Repair / TechStable
 
 日期：2026-09-25  
 Title ID：`00040000000C9B00`
@@ -8,9 +8,7 @@ Title ID：`00040000000C9B00`
 ```text
 Official Bulk Sync V3
 +
-Recovery C Existing Lock Recovery
-+
-Recovery-C-only precise reconnect
+Recovery C4 Persistent Existing-Lock Repair
 ```
 
 ## 安装
@@ -21,93 +19,103 @@ SD:/luma/titles/00040000000C9B00/code.ips
 
 Luma3DS 开启 `Enable game patching`。
 
-严格版本：
+严格基线：
 
 ```text
 stock .code size  0x2AC000
 stock SHA-256     2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF
 ```
 
-当前 r3：
+当前 C4：
 
 ```text
-code.ips size     1856 bytes
-code.ips SHA-256  F5FCB3370D4CDC7521C9841BF61371FC2EFAEA7438E2546173B42F6353086A9D
+code.ips size     1901 bytes
+code.ips SHA-256  2C400AF5E0C5C997136A6C8F070B614D19A00A09339160A590AFDB684D3F8733
+patched .code SHA-256
+77ED66B94E0CC0619F6F52327CA2C1693536032F211E670459E57A842E8C7472
 ```
 
-## Recovery C r3
+## C4 的恢复逻辑
 
-针对已有 server pending transaction、而 game recovery `dataId/curVersion` mismatch 的锁存档：
+针对 server 已有 pending transaction T1、而游戏 recovery 的 `dataId/curVersion` 不匹配：
 
 ```text
+第一次进入
 state18 mismatch
-→ CURRENT SERVER T1 重建 RAM context
-→ Recovery-C-only status3 marker
-→ state17 入口立即还原成 stock status1
-→ stock Rollback(T1)
-→ stock clear transactionPassword
-→ stock save cleanup
-→ C-only result3
-→ stock state20 clean disconnect
+→ CURRENT SERVER T1 精确重建 GameRecoveryRecord
+→ status3 仅作为 RAM handoff marker
+→ state17 立即恢复成 stock status1
+→ 跳过远端 Commit/Rollback
+→ 保留 T1 transactionPassword
+→ 调用 stock game-save writer 0x002B4AB4
+→ exact T1/status1 真正写入游戏存档
+→ 保存成功后 result3
+→ state20 clean disconnect
+
+第二次进入
+游戏 recovery 与 server T1 匹配
+→ 不再走原 mismatch edge
+→ stock recovery
+→ stock Rollback/cleanup
+→ 正常 BankDataSync
 ```
 
-普通 stock state17 的 status1/status2 路径仍保持 `result4 → state16`，没有做全局路由改写。
+第一轮若游戏保存失败，C4 不提前修改服务器 T1，继续走 stock error path。
 
-status3 仅作 RAM marker，在任何 game save 前恢复为 status1，不作为持久化 recovery 格式。
-
-第一次实机看到的“服务器被锁住”已经定位为 state17 initializer 在真正 RPC 前显示的固定 message 0x0E；r3 保留原 UI helper，只换成中性等待文案。
-
-## bulk_import.bin 不需要移走
-
-可以保留：
+## bulk_import.bin 可以保留
 
 ```text
 SD:/3ds/Bank/bulk_import.bin
 ```
 
-Recovery C 成功后会结束当前 recovery session。随后重新进入/重新联动时：
+第一轮 C4 只修 recovery 存档，不执行 Bulk。服务器事务由下一次 stock recovery 正常完成后，普通 BankDataSync 下载 fresh BankObject，Bulk V3 才 Apply：
 
 ```text
 fresh BankObject
-→ Official Bulk Sync V3
+→ Bulk Sync V3
 → bulk_import.bin 主 100 Box overlay
-→ Bank UI 检查
+→ Bank UI
 → 原版保存
 ```
 
-Bulk 的 Pokémon 数据来源是 `bulk_import.bin`，不是自动抓取当前游戏 PC Box。Bulk 是 slot-by-slot overlay，不是 append。
+Bulk 是 overlay，不是 append；宝可梦数据来源仍是 `bulk_import.bin`。
+
+## 关于“服务器被锁住”文案
+
+stock state17 在真正恢复 RPC 前就会显示固定 recovery 提示，所以该文案本身不是服务器状态探针。C4 使用中性等待 message；真正要看的是第二次进入是否仍发生 transaction mismatch，以及能否走完 stock recovery。
 
 ## 实机测试顺序
 
 ```text
-1. 备份游戏存档
+1. 备份相关游戏存档
 2. 保留 bulk_import.bin
-3. 安装 r3 code.ips
-4. 进入原先锁住的游戏
-5. 等 Recovery C Rollback/cleanup
-6. 应进入 clean disconnect/返回边界，而不是同 session 继续 state16
-7. 再次进入/重新联动同一游戏
-8. 检查 Bulk Pokémon 是否出现在 Bank UI
+3. 安装 C4 code.ips
+4. 第一次进入原来锁住的游戏
+5. 等 C4 持久化 exact T1/status1 并结束本轮
+6. 再次进入同一游戏
+7. 观察 stock recovery 是否完成
+8. 正常进入 BankDataSync 后检查 Bulk Pokémon
 9. 确认 Box 正确后原版保存
-10. 完全退出，再进入验证服务器 round-trip
+10. 完全退出，再进入验证 server round-trip
 ```
 
 ## 构建验证
 
 ```text
-Recovery C host regression               PASS
-stock recovery model regression          PASS
-Official Bulk Sync regression            PASS
-ARMv6K production build                  PASS
-Windows armips link smoke                PASS
-state18/state17 branch-target decode      PASS
-critical machine-code assertions          PASS
-real stock patch-surface replay           PASS
-IPS replay == patched real stock image    PASS
-RX tail                                   1771 / 1776 bytes
+TDD RED/GREEN                              PASS
+Recovery C host regression                PASS
+stock recovery model regression           PASS
+Official Bulk Sync regression             PASS
+ARMv6K production build                   PASS
+Windows armips link smoke                 PASS
+C4 stock save-call target 0x002B4AB4      PASS
+state18/state17 branch-target decode       PASS
+real stock patch-surface whitelist         PASS
+IPS replay == patched real stock image     PASS
+RX tail                                    1767 / 1776 bytes
 ```
 
-仍待真实锁存档 r3 端到端和网络 fault-injection，因此仍标记 **TechStable**。
+真实锁存档 C4 端到端和 fault injection 仍待实机，因此仍标记 **TechStable**。
 
 详细文档：
 
