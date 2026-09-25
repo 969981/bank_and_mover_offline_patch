@@ -15,12 +15,12 @@ OfficialExistingLockDecision OfficialExistingLock_PrepareGameRollback(
     gameOut->size=server->size;
 
     /*
-     * 3 is a Recovery-C-only transient marker.  The production state17 hook
-     * consumes it before any game save, restores stock rollback status=1, and
-     * records a state17-local result marker so only this synthetic recovery
-     * disconnects after successful cleanup.  Ordinary stock status 1/2 paths
-     * are unchanged.
+     * 3 is a Recovery-C-only RAM marker.  C4 consumes it in stock state17,
+     * immediately restores the record to stock Rollback status=1, then uses
+     * the stock game-save writer to persist the exact CURRENT SERVER T1 before
+     * any remote Commit/Rollback is attempted.  A successful persist ends the
+     * current session; the next launch follows ordinary stock recovery.
      */
     gameOut->status=3u;
-    return OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_ROLLBACK;
+    return OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_PERSIST_REPAIR;
 }
