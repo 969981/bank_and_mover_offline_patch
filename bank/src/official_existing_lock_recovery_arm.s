@@ -4,7 +4,7 @@
 .text
 .align 2
 
-// Recovery C: repair an already-existing state18 mismatch using only the
+// Recovery C4: repair an already-existing state18 mismatch using only the
 // CURRENT server BankTransactionParam.  No WAL/history is consulted and no
 // Commit path exists here.
 //
@@ -13,12 +13,11 @@
 //   r0        = current GameRecoveryRecord *
 //   [r4+0x28] = current server BankTransactionParam *
 //
-// We rebuild the in-memory game recovery record with transient status=3 and
-// mirror the current server transaction into state18's canonical context.
-// status=3 is never intended to reach disk: the state17 hook consumes it,
-// restores stock rollback status=1, and records a state17-local result marker.
-// state17 then performs the single stock RollbackBankObject call, clears
-// transactionPassword and saves the game through the stock family writer.
+// C4 rebuilds an exact in-memory GameRecoveryRecord and marks it status=3 only
+// as a RAM-only handoff marker.  state17 consumes 3 immediately, restores
+// stock status=1, persists the repaired record with the stock game writer, and
+// exits the current session WITHOUT a remote transaction.  The next launch is
+// therefore ordinary stock recovery against a durable matching record.
 
 .equ State18StoreSubstate, 0x002A8980
 
@@ -31,27 +30,19 @@ OfficialExistingLock_GameMismatch:
     cmp r1,#0
     beq .Lstock_mismatch
 
-    // server -> GameRecoveryRecord
-    // dataId + curVersion
-    ldmia r1,{r2,r3,r12}
-    stmia r0,{r2,r3}
-    str r12,[r0,#0x10]
-
-    // transactionPassword
-    ldr r2,[r1,#0x18]
-    ldr r3,[r1,#0x1c]
-    str r2,[r0,#0x08]
-    str r3,[r0,#0x0c]
-
-    // updateVersion + size
-    ldr r2,[r1,#0x0c]
-    str r2,[r0,#0x14]
+    // server -> GameRecoveryRecord, exact CURRENT T1.
+    // Use doubleword transfers to stay inside the verified RX-tail budget.
+    ldrd r2,r3,[r1,#0x00]
+    strd r2,r3,[r0,#0x00]
+    ldrd r2,r3,[r1,#0x18]
+    strd r2,r3,[r0,#0x08]
+    ldrd r2,r3,[r1,#0x08]
+    strd r2,r3,[r0,#0x10]
     ldr r2,[r1,#0x10]
     str r2,[r0,#0x18]
 
-    // 3 is Recovery-C-only.  For state18 source selection any non-zero value
-    // retains the stock "game source" behavior, while state17 can distinguish
-    // this synthetic record from ordinary persisted status=1 Rollback records.
+    // 3 is never meant to be persisted. state17 converts it to stock status=1
+    // before invoking the stock game-save writer.
     mov r2,#3
     strb r2,[r0,#0x1c]
     strb r2,[r4,#0x88]
@@ -66,7 +57,8 @@ OfficialExistingLock_GameMismatch:
     ldmia r1!,{r2,r12}
     stmia r3!,{r2,r12}
 
-    // Stock state18 case11 sets result=4.  The outer flow then enters state17.
+    // Enter stock state17 without performing state18 Commit/Rollback. C4's
+    // state17 hook performs persist-only repair first.
     mov r0,#11
     b .Lset_substate
 
