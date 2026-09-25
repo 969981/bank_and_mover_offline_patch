@@ -128,7 +128,7 @@ jobs:
           foreach ($va in @(0x002A89D0,0x002A89E0)) {
             $off = $va - 0x00100000
             $word = [BitConverter]::ToUInt32($bytes,$off)
-            if (($word -band 0xFF000000) -ne 0x1A000000) {
+            if (($word -band [uint32]0xFF000000) -ne [uint32]0x1A000000) {
               throw ('expected ARM BNE at 0x{0:X8}, got 0x{1:X8}' -f $va,$word)
             }
             $imm = [int64]($word -band 0x00FFFFFF)
@@ -142,7 +142,7 @@ jobs:
           $va = 0x002A9518
           $off = $va - 0x00100000
           $word = [BitConverter]::ToUInt32($bytes,$off)
-          if (($word -band 0xFF000000) -ne 0xEA000000) {
+          if (($word -band [uint32]0xFF000000) -ne [uint32]0xEA000000) {
             throw ('expected ARM B at state17 status hook, got 0x{0:X8}' -f $word)
           }
           $imm = [int64]($word -band 0x00FFFFFF)
