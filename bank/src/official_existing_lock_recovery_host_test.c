@@ -25,7 +25,8 @@ int main(void)
     assert(out.curVersion==server.curVersion);
     assert(out.updateVersion==server.updateVersion);
     assert(out.size==server.size);
-    assert(out.status==1u);
+    /* 3 is Recovery-C-only and exists only in RAM until state17 consumes it. */
+    assert(out.status==3u);
 
     out.dataId=0xA5A5A5A5A5A5A5A5ULL;
     d=OfficialExistingLock_PrepareGameRollback(0,&server,&out);
@@ -47,7 +48,7 @@ int main(void)
         assert(second.curVersion==server.curVersion);
         assert(second.updateVersion==server.updateVersion);
         assert(second.size==server.size);
-        assert(second.status==1u);
+        assert(second.status==3u);
     }
 
     return 0;
