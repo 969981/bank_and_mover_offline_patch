@@ -6,12 +6,16 @@
 
 // Official Bulk Sync + Recovery C (Existing Lock Recovery).
 // Keep every executable byte inside the verified RX text tail. Recovery C
-// replaces only the two genuine state18 game-transaction mismatch branches.
+// replaces only narrow, machine-code-verified recovery/state-routing points.
 .definelabel OfficialBulk_CodeStart, TextActualEnd
 .definelabel OfficialBulk_CodeEnd,   TextMappedEnd
 
 .definelabel RecoveryC_GameDataIdMismatch,      0x002A89D0
 .definelabel RecoveryC_GameVersionMismatch,     0x002A89E0
+.definelabel RecoveryC_State17CtorMarkerInit,   0x002A61C8
+.definelabel RecoveryC_State17StatusLoad,       0x002A9518
+.definelabel RecoveryC_State17StatusResume,     0x002A951C
+.definelabel RecoveryC_State17SuccessResult,    0x002A966C
 .definelabel RecoveryC_State17MessageIdLoad,    0x002A970C
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
@@ -28,12 +32,30 @@
 .org RecoveryC_GameVersionMismatch
     bne OfficialExistingLock_GameMismatch
 
-// Recovery C deliberately routes the synthetic status=1 game record through
-// stock state17 so stock Rollback + transactionPassword cleanup + game save all
-// remain intact. Stock state17 initializes with message 0x0E (the interrupted /
-// server-locked banner) before it has inspected the record or started Rollback,
-// which is misleading for the C path. Reuse stock message 0x0C, the ordinary
-// initial-connection/wait message, but preserve the full 0x0025DA24 UI helper.
+// state17 allocates 0x68 bytes and stock owns +0x60/+0x61 for callback status.
+// +0x62 is unused by stock state17.  Initialize the dword at +0x60 as
+// 00 00 04 00 so ordinary state17 success still returns result=4 while keeping
+// both stock callback bytes cleared.  Recovery C changes only +0x62 to 3.
+.org RecoveryC_State17CtorMarkerInit
+    mov r1,#0x40000
+    str r1,[r0,#0x60]
+
+// Consume Recovery C's transient GameRecoveryRecord.status=3 before stock
+// state17 evaluates status.  The helper restores the record to stock status=1
+// before any persistence and marks this state17 instance to disconnect after
+// successful Rollback + cleanup instead of immediately entering state16.
+.org RecoveryC_State17StatusLoad
+    b OfficialExistingLock_State17Status
+
+// Stock case7 is the successful terminal result.  For ordinary state17 +0x62
+// is 4, reproducing stock behavior exactly.  Recovery C sets it to 3, and the
+// existing STRB/MOV/POP sequence then returns result=3 -> state20 cleanup.
+.org RecoveryC_State17SuccessResult
+    ldrb r0,[r4,#0x62]
+
+// Keep the stock UI helper, but use the neutral connection/wait message while
+// state17 performs the recovery operation.  This avoids presenting the fixed
+// stock "server locked" banner before Rollback has even been attempted.
 .org RecoveryC_State17MessageIdLoad
     mov r1,#0x0C
 
@@ -60,6 +82,23 @@ OfficialBulk_BankDataSyncDispatch:
     mov r0,r4
     b BankDataSyncState_Update + 4
     .pool
+
+// Entry contract from 0x002A9518:
+//   r0 = current GameRecoveryRecord *
+//   r4 = current state17 object
+//
+// status 1/2: reproduce the stock LDRB and continue unchanged.
+// status 3: Recovery C marker.  Record result=3 in state17-local +0x62, restore
+//           the GameRecoveryRecord to stock Rollback status=1, and then let the
+//           stock CMP/MOVEQ path choose substate3 Rollback.
+OfficialExistingLock_State17Status:
+    ldrb r1,[r0,#0x1c]
+    cmp r1,#3
+    strbeq r1,[r4,#0x62]
+    moveq r1,#1
+    strbeq r1,[r0,#0x1c]
+    mov r0,r1
+    b RecoveryC_State17StatusResume
 
 .align 2
     .importobj "../build/official_existing_lock_recovery_arm.o"
