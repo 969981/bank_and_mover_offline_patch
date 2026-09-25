@@ -1,44 +1,97 @@
-# Pokémon Bank Recovery C TechStable 使用说明
+# Pokémon Bank Recovery C TechStable r3 使用说明
 
-> 本说明面向实际安装和验证。
->
-> 当前发布同时包含：**Official Bulk Sync V3 + Recovery C**。
+> 当前发布：**Official Bulk Sync V3 + Recovery C + C-only precise reconnect**。
 
-## 1. 安装
-
-目标 Title ID：
-
-```text
-00040000000C9B00
-```
-
-将发布文件：
-
-```text
-release/00040000000C9B00/code.ips
-```
-
-放到 SD 卡：
+## 安装
 
 ```text
 SD:/luma/titles/00040000000C9B00/code.ips
 ```
 
-Luma3DS 必须启用：
+Luma3DS 开启 `Enable game patching`。
+
+只适用于 stock Bank v1.5：
 
 ```text
-Enable game patching
+.code size  0x2AC000
+SHA-256     2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF
 ```
 
-第一次测试前建议备份相关游戏存档。
+当前 r3 `code.ips`：
 
----
+```text
+size        1856 bytes
+SHA-256     F5FCB3370D4CDC7521C9841BF61371FC2EFAEA7438E2546173B42F6353086A9D
+```
 
-## 2. Bulk Sync：把 bulk_import.bin 的宝可梦导入 Bank
+## Recovery C r3：已锁存档怎么测
 
-### 2.1 准备文件
+这次**可以保留**：
 
-固定输入路径：
+```text
+SD:/3ds/Bank/bulk_import.bin
+```
+
+推荐流程：
+
+```text
+1. 先备份游戏存档
+2. 安装 r3 code.ips
+3. bulk_import.bin 保持原位
+4. 用原来发生 Trainer/save mismatch 的同一游戏进入 Bank
+5. Recovery C 从 CURRENT SERVER T1 重建 RAM recovery context
+6. stock state17 做唯一一次 Rollback
+7. stock 清 transactionPassword，并保存游戏 cleanup
+8. r3 只对这次 C recovery 返回 result3
+9. stock state20 clean disconnect/cleanup
+10. 再次进入/重新联动同一游戏
+11. 新 session 正常 BankDataSync 下载 fresh BankObject
+12. Official Bulk Sync V3 读取 bulk_import.bin
+13. 进入 Bank UI 检查 100 Box
+14. 确认无误后使用原版 Bank 保存
+15. 完全退出 Bank，再次进入验证 server round-trip
+```
+
+r3 的关键变化是：**不会在刚完成 Recovery C 的同一个 recovery session 里直接继续 Bulk。** Bulk 在下一次干净联动时执行。
+
+## 关于“服务器被锁住”提示
+
+第一次实机发现的：
+
+```text
+由于上次操作中断，因此服务器被锁住了。请稍后再试。
+```
+
+已经定位为 stock state17 initializer 的固定 message 0x0E，它在真正执行 Rollback/Commit 前就显示，因此不能单独作为“服务器仍然锁住”的证据。
+
+r3 保留 stock UI helper，但将这条固定文案换成中性的连接/等待 message。
+
+## r3 如何只影响 Recovery C
+
+普通 stock recovery：
+
+```text
+status1 -> stock Rollback -> result4 -> state16
+status2 -> stock Commit   -> result4 -> state16
+```
+
+Recovery C：
+
+```text
+state18 mismatch
+→ RAM-only status3 marker
+→ state17 入口识别 C marker
+→ 立即恢复成 stock status1
+→ stock Rollback/cleanup/save
+→ C-only result3
+→ state20 clean disconnect
+```
+
+status3 在任何 game save 前就恢复成 status1，不作为持久化格式使用。
+
+## Bulk Sync
+
+固定输入：
 
 ```text
 SD:/3ds/Bank/bulk_import.bin
@@ -51,200 +104,35 @@ SD:/3ds/Bank/bulk_import.bin
 0xBB518  Bank v1.5 current image
 ```
 
-文件必须是：
+要求：
 
 ```text
-version  = 2
-boxCount = 100
+version=2
+boxCount=100
 ```
 
-### 2.2 操作顺序
+实际流程：
 
 ```text
-1. 把 bulk_import.bin 放到 SD:/3ds/Bank/
-2. 启动 Pokémon Bank
-3. 选择/联动一个受支持的 Pokémon 游戏
-4. 等待 Bank 正常下载当前服务器 Bank 数据
-5. Bulk Sync 自动备份 fresh BankObject
-6. Bulk Sync 自动把 bulk_import.bin 的主 100 Box 合并进 Bank 内存数据
-7. 进入 Bank UI 后检查 Box 内容
-8. 使用 Bank 原版“保存”功能
-9. 让原版 Prepare / Upload / Complete 流程完成
-10. 重新进入 Bank 验证服务器 round-trip
-```
-
-### 2.3 “联动游戏”的准确含义
-
-这项功能是：
-
-```text
-bulk_import.bin 中的 Pokémon
-        ↓
-当前联动游戏提供 Bank 普通联动环境和 metadata 来源
-        ↓
 fresh server BankObject
-        ↓
-Bank UI
-        ↓
-原版保存到服务器
+→ 自动完整备份到 SD:/3ds/Bank/bankdata_YYYYMMDD_HHMMSS.bin
+→ 只读 bulk_import.bin
+→ slot-by-slot overlay 主 100 Box
+→ 当前联动游戏生成 changed slot 的 tag/source/timestamp
+→ Bank UI
+→ 用户原版保存
 ```
 
-不是：
+注意：Bulk 是 overlay，不是 append；bulk 空槽代表对应 Bank Pokémon record 清空。宝可梦数据来源是 `bulk_import.bin`，不是自动读取当前游戏 PC Box。
+
+## 当前验证状态
+
+已通过 host、stock recovery model、Bulk regression、ARM build、armips link、机器码目标检查、真实 stock patch surface 和 IPS replay。
+
+仍需这次实机确认：
 
 ```text
-当前游戏存档全部 Pokémon → 自动复制到 Bank
+Recovery C -> clean disconnect
+重新进入 -> Bulk Apply
+原版保存 -> 完全退出 -> redownload
 ```
-
-Bulk 中宝可梦的来源仍是 `bulk_import.bin`。
-
-当前联动游戏主要用于：
-
-- 进入普通 game-linked Bank 下载路径；
-- 提供当前 `format tag`；
-- 提供当前 `source software`；
-- 提供 stock runtime timestamp。
-
-### 2.4 自动备份
-
-每次真正 Apply Bulk 之前会先生成：
-
-```text
-SD:/3ds/Bank/bankdata_YYYYMMDD_HHMMSS.bin
-```
-
-这是刚从服务器下载、尚未被 Bulk 修改的 fresh BankObject，大小：
-
-```text
-0xBB518
-```
-
-如果 backup 失败，Bulk 不会 Apply。
-
-如果 Bulk 读取到一半发生 I/O 错误，会尝试把刚生成的 backup 重新恢复到 runtime BankObject。
-
-### 2.5 bulk_import.bin 不会被修改
-
-补丁只读：
-
-```text
-SD:/3ds/Bank/bulk_import.bin
-```
-
-不会自动：
-
-- 删除；
-- 改名；
-- 移走；
-- 覆盖；
-- 写回 metadata。
-
-因此如果文件一直留在该路径，下次普通联动成功后仍会再次进入 Bulk merge 检查。
-
-已经与服务器完全相同的 slot 不会重复刷新 metadata。
-
----
-
-## 3. Recovery C：处理已经出现的 Trainer/save mismatch
-
-适用情形：
-
-```text
-服务器已经存在 pending transaction T1
-+
-当前 local/game recovery 与 T1 不一致
-+
-stock Bank state18 即将进入 Trainer/save mismatch
-```
-
-Recovery C 会：
-
-```text
-读取当前 server T1
-→ 重建 exact game recovery context
-→ 强制 status=1 / Rollback
-→ 交回 stock state17
-→ stock RollbackBankObject(T1)
-→ stock 清理 game recovery transactionPassword
-→ stock 保存 cleanup
-```
-
-不会尝试把未知历史 transaction Commit。
-
----
-
-## 4. 已锁用户建议验证顺序
-
-```text
-1. 先备份游戏存档
-2. 暂时移走 SD:/3ds/Bank/bulk_import.bin
-3. 安装 Recovery C code.ips
-4. 用发生 Trainer mismatch 的同一游戏进入 Bank
-5. 确认 Recovery C 完成 Rollback/cleanup
-6. 完全退出 Bank
-7. 再次进入同一游戏验证锁是否消失
-8. 确认正常 Bank 浏览/保存功能
-9. 再放回 bulk_import.bin 测试 Bulk Sync
-```
-
-把 Recovery 测试和 Bulk 数据变更测试分两次做，更容易判断问题来源。
-
----
-
-## 5. Bulk Sync 建议验证顺序
-
-不要第一次就直接 3000 只全量覆盖。
-
-推荐：
-
-```text
-H0：不放 bulk_import.bin，确认普通 Bank 完全正常
-H1：只改 1 个 slot
-H2：重新登录确认 server round-trip
-H3：扩大到 1 Box / 30 slots
-H4：扩大到多 Box
-H5：最终再做全 100 Box
-```
-
-每一步都保留自动生成的 fresh backup。
-
----
-
-## 6. 版本限制
-
-仅适用于 stock Pokémon Bank v1.5：
-
-```text
-.code size  0x2AC000
-SHA-256     2DCE4796F54807CF8A67F1CE6297BF472D969B30ED7A7E8E25C2A6C2BDC40ABF
-```
-
-当前 `code.ips`：
-
-```text
-SHA-256 876955BF69FF600BFDEA0073B50F16CFE0CFFBA5275771BD5C951A0C30E3D09F
-```
-
----
-
-## 7. 当前状态
-
-当前称为 **TechStable**：
-
-已经通过：
-
-- host regression；
-- stock recovery model regression；
-- Bulk Sync regression；
-- ARMv6K production build；
-- RX-tail budget；
-- armips link smoke；
-- Recovery C branch target decode；
-- IPS patch-surface whitelist。
-
-仍建议继续补：
-
-- 真实 Trainer mismatch 锁存档恢复；
-- Recovery 后再次进入 Bank；
-- Bulk 1-slot → server save → redownload；
-- Recovery C 与 Bulk Sync 连续实机测试；
-- 网络故障 fault injection。
