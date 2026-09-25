@@ -12,6 +12,7 @@
 
 .definelabel RecoveryC_GameDataIdMismatch,      0x002A89D0
 .definelabel RecoveryC_GameVersionMismatch,     0x002A89E0
+.definelabel RecoveryC_State17LockBannerCall,   0x002A9718
 
 .open "../rom/exefs/00040000000C9B00.dec.code", "../build/00040000000C9B00.dec.code", 0x00100000
 
@@ -26,6 +27,15 @@
     bne OfficialExistingLock_GameMismatch
 .org RecoveryC_GameVersionMismatch
     bne OfficialExistingLock_GameMismatch
+
+// state17 is deliberately reused for the stock Rollback + game-record cleanup
+// path. Its initializer shows message 0x0E before it has even inspected the
+// game recovery record or started Rollback, which makes a successful Recovery C
+// takeover look like a fresh server-lock error. Suppress only that UI write.
+// Do NOT skip state17 itself: its remote Rollback, transactionPassword clear,
+// game-save persistence and result=4 -> state16 transition remain stock.
+.org RecoveryC_State17LockBannerCall
+    nop
 
 .org OfficialBulk_CodeStart
 .area OfficialBulk_CodeEnd-OfficialBulk_CodeStart
