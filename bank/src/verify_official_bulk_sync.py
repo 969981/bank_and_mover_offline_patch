@@ -10,6 +10,9 @@ ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
     (0x002A89D0,0x002A89D4,"Recovery C dataId mismatch edge"),
     (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch edge"),
+    (0x002A61C8,0x002A61D0,"Recovery C state17 transient marker init"),
+    (0x002A9518,0x002A951C,"Recovery C state17 synthetic-status hook"),
+    (0x002A966C,0x002A9670,"Recovery C state17 success result"),
     (0x002A970C,0x002A9710,"Recovery C state17 message id"),
     (TAIL_START,TAIL_END,"official RX text-tail payload"),
 ]
@@ -18,14 +21,22 @@ REQUIRED_CHANGED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update"),
     (0x002A89D0,0x002A89D4,"Recovery C dataId mismatch"),
     (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch"),
+    (0x002A61C8,0x002A61D0,"Recovery C state17 transient marker init"),
+    (0x002A9518,0x002A951C,"Recovery C state17 synthetic-status hook"),
+    (0x002A966C,0x002A9670,"Recovery C state17 success result"),
     (0x002A970C,0x002A9710,"Recovery C state17 message id"),
 ]
 STOCK_HOOK_BYTES = {
     (0x002A89D0,0x002A89D4): bytes.fromhex("3e00001a"),
     (0x002A89E0,0x002A89E4): bytes.fromhex("3a00001a"),
+    (0x002A61C8,0x002A61D0): bytes.fromhex("6010c0e56110c0e5"),
+    (0x002A9518,0x002A951C): bytes.fromhex("1c00d0e5"),
+    (0x002A966C,0x002A9670): bytes.fromhex("0400a0e3"),
     (0x002A970C,0x002A9710): bytes.fromhex("0e10a0e3"),
 }
 EXPECTED_PATCHED_BYTES = {
+    (0x002A61C8,0x002A61D0): bytes.fromhex("0117a0e3601080e5"),
+    (0x002A966C,0x002A9670): bytes.fromhex("6200d4e5"),
     (0x002A970C,0x002A9710): bytes.fromhex("0c10a0e3"),
 }
 PRESERVED_STOCK_BYTES = {
@@ -33,6 +44,7 @@ PRESERVED_STOCK_BYTES = {
 }
 EXPECTED_TAIL_SYMBOLS = {
     "officialbulk_bankdatasyncdispatch",
+    "officialexistinglock_state17status",
     "officialexistinglock_gamemismatch",
     "officialbulksync_process",
 }
@@ -55,6 +67,13 @@ def read_symbols(path):
             try: out[parts[1].lower()]=int(parts[0],16)
             except ValueError: pass
     return out
+
+
+def arm_branch_target(va, word):
+    imm=word & 0x00FFFFFF
+    if imm & 0x00800000:
+        imm-=0x01000000
+    return (va + 8 + imm * 4) & 0xFFFFFFFF
 
 
 def apply_ips(base,patch):
@@ -118,6 +137,13 @@ def main():
         assert TAIL_START<=addr<TAIL_END, f"symbol {name} escaped RX tail: {syms[name]:08X}"
     for name in FORBIDDEN_SYMBOLS:
         assert name not in syms, f"forbidden Recovery C symbol present: {name}"
+
+    state17_word=int.from_bytes(addr_slice(patched,0x002A9518,0x002A951C),"little")
+    assert (state17_word & 0xFF000000)==0xEA000000, \
+        f"expected ARM B at state17 status hook, got {state17_word:08X}"
+    expected=syms["officialexistinglock_state17status"] & ~1
+    actual=arm_branch_target(0x002A9518,state17_word)
+    assert actual==expected, f"state17 status hook target {actual:08X} != helper {expected:08X}"
 
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
