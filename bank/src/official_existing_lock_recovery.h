@@ -21,7 +21,8 @@ typedef struct {
 
 typedef enum {
     OFFICIAL_EXISTING_LOCK_KEEP_STOCK_MISMATCH=0,
-    OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_ROLLBACK=1
+    OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_ROLLBACK=1,
+    OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_PERSIST_REPAIR=2
 } OfficialExistingLockDecision;
 
 OfficialExistingLockDecision OfficialExistingLock_PrepareGameRollback(
