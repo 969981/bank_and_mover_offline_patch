@@ -53,15 +53,16 @@ jobs:
             /tmp/recovery-c.bin
           PROD_SIZE=$(arm-none-eabi-size bank/build/official_bulk_sync_prod.o | awk 'NR==2 {print $1}')
           C_SIZE=$(stat -c %s /tmp/recovery-c.bin)
-          # 36-byte Bulk dispatcher + 28-byte C-only state17 status helper.
-          GLUE_SIZE=64
+          # 36-byte Bulk dispatcher + 36-byte C4 state17 status helper.
+          GLUE_SIZE=72
           TOTAL=$((PROD_SIZE + GLUE_SIZE + C_SIZE))
           echo "RX tail budget: bulk=${PROD_SIZE} armips_glue=${GLUE_SIZE} recovery_c=${C_SIZE} total=${TOTAL}/1776"
           test "$TOTAL" -le 1776
 
-          echo '=== Recovery C ARM shim ==='
+          echo '=== Recovery C4 ARM shim ==='
           arm-none-eabi-objdump -d bank/build/official_existing_lock_recovery_arm.o | tee /tmp/recovery-c.dis
           grep -Eq 'mov[[:space:]]+r2, *#3' /tmp/recovery-c.dis
+          grep -Eq 'ldrd' /tmp/recovery-c.dis
           test -z "$(arm-none-eabi-nm -u bank/build/official_existing_lock_recovery_arm.o)"
 
       - uses: actions/upload-artifact@v4
@@ -100,7 +101,7 @@ jobs:
           if (-not (Test-Path $patched)) { throw 'armips did not create patched image' }
           if ((Get-Item $patched).Length -ne 0x2AC000) { throw 'patched image size changed' }
 
-      - name: Verify linked Recovery C symbols and branch targets
+      - name: Verify linked Recovery C4 symbols and branch targets
         shell: pwsh
         run: |
           $text = Get-Content bank/build/official-armips-symbols-smoke.txt -Raw
@@ -152,9 +153,16 @@ jobs:
             throw ('state17 status target mismatch: target=0x{0:X8} helper=0x{1:X8}' -f $target,$statusHelper)
           }
 
+          # C4 case5: marker check, preserve transactionPassword only for C4,
+          # then direct-call the stock state17 game-save start method.
           $checks = @{
             0x002A61C8 = 'E3A01701'
             0x002A61CC = 'E5801060'
+            0x002A95F0 = 'E5D42062'
+            0x002A95F4 = 'E3520003'
+            0x002A95F8 = '0A000002'
+            0x002A9600 = 'E5801008'
+            0x002A9604 = 'E580100C'
             0x002A966C = 'E5D40062'
             0x002A970C = 'E3A0100C'
           }
@@ -165,6 +173,17 @@ jobs:
             if ($actual -ne $expected) {
               throw ('machine-code mismatch at 0x{0:X8}: got=0x{1:X8} expected=0x{2:X8}' -f $entry.Key,$actual,$expected)
             }
+          }
+
+          $va = 0x002A9610
+          $off = $va - 0x00100000
+          $word = [BitConverter]::ToUInt32($bytes,$off)
+          if (($word -shr 24) -ne 0xEB) { throw ('expected BL at C4 save call, got 0x{0:X8}' -f $word) }
+          $imm = [int64]($word -band 0x00FFFFFF)
+          if (($imm -band 0x00800000) -ne 0) { $imm -= 0x01000000 }
+          $target = [int64]$va + 8 + ($imm * 4)
+          if ($target -ne 0x002B4AB4) {
+            throw ('C4 save call target mismatch: target=0x{0:X8}' -f $target)
           }
 
       - uses: actions/upload-artifact@v4
