@@ -5,6 +5,7 @@ BASE_SHA256 = "2dce4796f54807cf8a67f1ce6297bf472d969b30ed7a7e8e25c2a6c2bdc40abf"
 CODE_BASE = 0x00100000
 TAIL_START = 0x00313910
 TAIL_END = 0x00314000
+STOCK_GAME_SAVE_START = 0x002B4AB4
 
 ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
@@ -12,6 +13,7 @@ ALLOWED = [
     (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch edge"),
     (0x002A61C8,0x002A61D0,"Recovery C state17 transient marker init"),
     (0x002A9518,0x002A951C,"Recovery C state17 synthetic-status hook"),
+    (0x002A95F0,0x002A9618,"Recovery C4 persist-first state17 case5 block"),
     (0x002A966C,0x002A9670,"Recovery C state17 success result"),
     (0x002A970C,0x002A9710,"Recovery C state17 message id"),
     (TAIL_START,TAIL_END,"official RX text-tail payload"),
@@ -23,6 +25,7 @@ REQUIRED_CHANGED = [
     (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch"),
     (0x002A61C8,0x002A61D0,"Recovery C state17 transient marker init"),
     (0x002A9518,0x002A951C,"Recovery C state17 synthetic-status hook"),
+    (0x002A95F0,0x002A9618,"Recovery C4 persist-first case5 block"),
     (0x002A966C,0x002A9670,"Recovery C state17 success result"),
     (0x002A970C,0x002A9710,"Recovery C state17 message id"),
 ]
@@ -31,16 +34,28 @@ STOCK_HOOK_BYTES = {
     (0x002A89E0,0x002A89E4): bytes.fromhex("3a00001a"),
     (0x002A61C8,0x002A61D0): bytes.fromhex("6010c0e56110c0e5"),
     (0x002A9518,0x002A951C): bytes.fromhex("1c00d0e5"),
+    (0x002A95F0,0x002A9618): bytes.fromhex(
+        "0010a0e3080080e20120a0e1060080e80110a0e3000094e5"
+        "182090e50400a0e132ff2fe10600a0e3"
+    ),
     (0x002A966C,0x002A9670): bytes.fromhex("0400a0e3"),
     (0x002A970C,0x002A9710): bytes.fromhex("0e10a0e3"),
 }
 EXPECTED_PATCHED_BYTES = {
     (0x002A61C8,0x002A61D0): bytes.fromhex("0117a0e3601080e5"),
+    (0x002A95F0,0x002A9618): bytes.fromhex(
+        "6220d4e5030052e30200000a0010a0e3081080e50c1080e5"
+        "0110a0e30400a0e1272d00eb0600a0e3"
+    ),
     (0x002A966C,0x002A9670): bytes.fromhex("6200d4e5"),
     (0x002A970C,0x002A9710): bytes.fromhex("0c10a0e3"),
 }
 PRESERVED_STOCK_BYTES = {
     (0x002A9718,0x002A971C): bytes.fromhex("c1d0feeb"),
+    # state17 vtable +0x18. C4 replaces the virtual dispatch with a direct BL
+    # only because this exact Bank v1.5 vtable proves the target is 0x2B4AB4.
+    (0x003619A4,0x003619A8): bytes.fromhex("b44a2b00"),
+    (0x002B4AB4,0x002B4AB8): bytes.fromhex("70402de9"),
 }
 EXPECTED_TAIL_SYMBOLS = {
     "officialbulk_bankdatasyncdispatch",
@@ -145,9 +160,14 @@ def main():
     actual=arm_branch_target(0x002A9518,state17_word)
     assert actual==expected, f"state17 status hook target {actual:08X} != helper {expected:08X}"
 
+    save_bl=int.from_bytes(addr_slice(patched,0x002A9610,0x002A9614),"little")
+    assert (save_bl & 0xFF000000)==0xEB000000, f"expected ARM BL at C4 save call, got {save_bl:08X}"
+    assert arm_branch_target(0x002A9610,save_bl)==STOCK_GAME_SAVE_START, \
+        f"C4 save call does not target stock writer 0x{STOCK_GAME_SAVE_START:08X}"
+
     replay=apply_ips(base,ips)
     assert replay==patched, "IPS replay does not reproduce patched .code"
-    print(f"official bulk sync + Recovery C verification passed; changed_bytes={changed}")
+    print(f"official bulk sync + Recovery C4 verification passed; changed_bytes={changed}")
 
 
 if __name__=="__main__": main()
