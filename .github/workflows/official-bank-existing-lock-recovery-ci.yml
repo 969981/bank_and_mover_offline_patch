@@ -53,12 +53,15 @@ jobs:
             /tmp/recovery-c.bin
           PROD_SIZE=$(arm-none-eabi-size bank/build/official_bulk_sync_prod.o | awk 'NR==2 {print $1}')
           C_SIZE=$(stat -c %s /tmp/recovery-c.bin)
-          TOTAL=$((PROD_SIZE + 36 + C_SIZE))
-          echo "RX tail budget: bulk=${PROD_SIZE} dispatcher=36 recovery_c=${C_SIZE} total=${TOTAL}/1776"
+          # 36-byte Bulk dispatcher + 28-byte C-only state17 status helper.
+          GLUE_SIZE=64
+          TOTAL=$((PROD_SIZE + GLUE_SIZE + C_SIZE))
+          echo "RX tail budget: bulk=${PROD_SIZE} armips_glue=${GLUE_SIZE} recovery_c=${C_SIZE} total=${TOTAL}/1776"
           test "$TOTAL" -le 1776
 
           echo '=== Recovery C ARM shim ==='
-          arm-none-eabi-objdump -d bank/build/official_existing_lock_recovery_arm.o
+          arm-none-eabi-objdump -d bank/build/official_existing_lock_recovery_arm.o | tee /tmp/recovery-c.dis
+          grep -Eq 'mov[[:space:]]+r2, *#3' /tmp/recovery-c.dis
           test -z "$(arm-none-eabi-nm -u bank/build/official_existing_lock_recovery_arm.o)"
 
       - uses: actions/upload-artifact@v4
@@ -103,15 +106,20 @@ jobs:
           $text = Get-Content bank/build/official-armips-symbols-smoke.txt -Raw
           foreach ($name in @(
             'OfficialBulk_BankDataSyncDispatch',
+            'OfficialExistingLock_State17Status',
             'OfficialExistingLock_GameMismatch',
             'OfficialBulkSync_Process'
           )) {
             if ($text -notmatch [regex]::Escape($name)) { throw "missing symbol: $name" }
           }
 
-          $match = [regex]::Match($text, '(?im)^([0-9A-Fa-f]{8})\s+officialexistinglock_gamemismatch\s*$')
-          if (-not $match.Success) { throw 'cannot resolve OfficialExistingLock_GameMismatch' }
-          $helper = [Convert]::ToInt64($match.Groups[1].Value,16)
+          $gameMatch = [regex]::Match($text, '(?im)^([0-9A-Fa-f]{8})\s+officialexistinglock_gamemismatch\s*$')
+          if (-not $gameMatch.Success) { throw 'cannot resolve OfficialExistingLock_GameMismatch' }
+          $gameHelper = [Convert]::ToInt64($gameMatch.Groups[1].Value,16)
+
+          $statusMatch = [regex]::Match($text, '(?im)^([0-9A-Fa-f]{8})\s+officialexistinglock_state17status\s*$')
+          if (-not $statusMatch.Success) { throw 'cannot resolve OfficialExistingLock_State17Status' }
+          $statusHelper = [Convert]::ToInt64($statusMatch.Groups[1].Value,16)
 
           $bytes = [System.IO.File]::ReadAllBytes('bank/build/00040000000C9B00.dec.code')
           $bulkOff = 0x002AF460 - 0x00100000
@@ -126,8 +134,35 @@ jobs:
             $imm = [int64]($word -band 0x00FFFFFF)
             if (($imm -band 0x00800000) -ne 0) { $imm -= 0x01000000 }
             $target = [int64]$va + 8 + ($imm * 4)
-            if ($target -ne $helper) {
-              throw ('BNE target mismatch at 0x{0:X8}: target=0x{1:X8} helper=0x{2:X8}' -f $va,$target,$helper)
+            if ($target -ne $gameHelper) {
+              throw ('BNE target mismatch at 0x{0:X8}: target=0x{1:X8} helper=0x{2:X8}' -f $va,$target,$gameHelper)
+            }
+          }
+
+          $va = 0x002A9518
+          $off = $va - 0x00100000
+          $word = [BitConverter]::ToUInt32($bytes,$off)
+          if (($word -band 0xFF000000) -ne 0xEA000000) {
+            throw ('expected ARM B at state17 status hook, got 0x{0:X8}' -f $word)
+          }
+          $imm = [int64]($word -band 0x00FFFFFF)
+          if (($imm -band 0x00800000) -ne 0) { $imm -= 0x01000000 }
+          $target = [int64]$va + 8 + ($imm * 4)
+          if ($target -ne $statusHelper) {
+            throw ('state17 status target mismatch: target=0x{0:X8} helper=0x{1:X8}' -f $target,$statusHelper)
+          }
+
+          $checks = @{
+            0x002A61C8 = 0xE3A01701
+            0x002A61CC = 0xE5801060
+            0x002A966C = 0xE5D40062
+            0x002A970C = 0xE3A0100C
+          }
+          foreach ($entry in $checks.GetEnumerator()) {
+            $off = [int64]$entry.Key - 0x00100000
+            $actual = [BitConverter]::ToUInt32($bytes,$off)
+            if ($actual -ne [uint32]$entry.Value) {
+              throw ('machine-code mismatch at 0x{0:X8}: got=0x{1:X8} expected=0x{2:X8}' -f $entry.Key,$actual,$entry.Value)
             }
           }
 
