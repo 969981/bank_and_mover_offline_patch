@@ -19,13 +19,14 @@ int main(void)
     OfficialExistingLockDecision d;
 
     d=OfficialExistingLock_PrepareGameRollback(1,&server,&out);
-    assert(d==OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_ROLLBACK);
+    /* C4 must request persist-first repair, not the old immediate state17 rollback route. */
+    assert((int)d==2);
     assert(out.dataId==server.dataId);
     assert(out.transactionPassword==server.transactionPassword);
     assert(out.curVersion==server.curVersion);
     assert(out.updateVersion==server.updateVersion);
     assert(out.size==server.size);
-    /* 3 is Recovery-C-only and exists only in RAM until state17 consumes it. */
+    /* 3 is RAM-only: state17 consumes it into stock status=1 before game save. */
     assert(out.status==3u);
 
     out.dataId=0xA5A5A5A5A5A5A5A5ULL;
@@ -42,7 +43,7 @@ int main(void)
     {
         OfficialExistingLockGameRecord second={0};
         d=OfficialExistingLock_PrepareGameRollback(1,&server,&second);
-        assert(d==OFFICIAL_EXISTING_LOCK_ROUTE_STATE17_ROLLBACK);
+        assert((int)d==2);
         assert(second.dataId==server.dataId);
         assert(second.transactionPassword==server.transactionPassword);
         assert(second.curVersion==server.curVersion);
