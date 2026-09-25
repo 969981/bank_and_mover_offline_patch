@@ -42,7 +42,7 @@
 
 // Consume Recovery C's transient GameRecoveryRecord.status=3 before stock
 // state17 evaluates status.  The helper restores the record to stock status=1
-// before any persistence and marks this state17 instance to disconnect after
+// before any game save and marks this state17 instance to disconnect after
 // successful Rollback + cleanup instead of immediately entering state16.
 .org RecoveryC_State17StatusLoad
     b OfficialExistingLock_State17Status
@@ -94,9 +94,9 @@ OfficialBulk_BankDataSyncDispatch:
 OfficialExistingLock_State17Status:
     ldrb r1,[r0,#0x1c]
     cmp r1,#3
-    strbeq r1,[r4,#0x62]
+    streqb r1,[r4,#0x62]
     moveq r1,#1
-    strbeq r1,[r0,#0x1c]
+    streqb r1,[r0,#0x1c]
     mov r0,r1
     b RecoveryC_State17StatusResume
 
