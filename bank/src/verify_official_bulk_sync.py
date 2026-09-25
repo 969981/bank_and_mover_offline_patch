@@ -10,6 +10,7 @@ ALLOWED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update hook"),
     (0x002A89D0,0x002A89D4,"Recovery C dataId mismatch edge"),
     (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch edge"),
+    (0x002A9718,0x002A971C,"Recovery C state17 misleading lock banner suppression"),
     (TAIL_START,TAIL_END,"official RX text-tail payload"),
 ]
 CAVES = [(TAIL_START,TAIL_END)]
@@ -17,10 +18,15 @@ REQUIRED_CHANGED = [
     (0x002AF460,0x002AF464,"BankDataSyncState_Update"),
     (0x002A89D0,0x002A89D4,"Recovery C dataId mismatch"),
     (0x002A89E0,0x002A89E4,"Recovery C curVersion mismatch"),
+    (0x002A9718,0x002A971C,"Recovery C state17 lock banner call"),
 ]
 STOCK_HOOK_BYTES = {
     (0x002A89D0,0x002A89D4): bytes.fromhex("3e00001a"),
     (0x002A89E0,0x002A89E4): bytes.fromhex("3a00001a"),
+    (0x002A9718,0x002A971C): bytes.fromhex("c1d0feeb"),
+}
+EXPECTED_PATCHED_BYTES = {
+    (0x002A9718,0x002A971C): bytes.fromhex("00f020e3"),
 }
 EXPECTED_TAIL_SYMBOLS = {
     "officialbulk_bankdatasyncdispatch",
@@ -92,6 +98,8 @@ def main():
 
     for start,end,name in REQUIRED_CHANGED:
         assert addr_slice(base,start,end)!=addr_slice(patched,start,end), f"required hook not changed: {name}"
+    for (start,end),expected in EXPECTED_PATCHED_BYTES.items():
+        assert addr_slice(patched,start,end)==expected, f"unexpected patched bytes at {start:08X}"
     assert addr_slice(base,0x0036A000,0x003AC000)==addr_slice(patched,0x0036A000,0x003AC000), \
         "Recovery C must not modify mapped data/BSS image"
 
